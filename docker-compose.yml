@@ -1,0 +1,59 @@
+version: '3'
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_HOST=localhost
+      - NODE_ENV=production
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=n8n_password
+      - N8N_ENCRYPTION_KEY=change_me_please_use_strong_encryption_key
+    volumes:
+      - ./data/n8n:/home/node/.n8n
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:14
+    restart: always
+    environment:
+      - POSTGRES_USER=n8n
+      - POSTGRES_PASSWORD=n8n_password
+      - POSTGRES_DB=n8n
+      - POSTGRES_NON_ROOT_USER=n8n
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  metabase:
+    image: metabase/metabase:latest
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_DBNAME=metabase
+      - MB_DB_PORT=5432
+      - MB_DB_USER=n8n
+      - MB_DB_PASS=n8n_password
+      - MB_DB_HOST=postgres
+    volumes:
+      - ./data/metabase:/metabase-data
+    depends_on:
+      - postgres
+
+volumes:
+  n8n_data:
+  postgres_data:
+  metabase_data:
