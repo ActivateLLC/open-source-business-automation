@@ -1,283 +1,255 @@
 # Security Considerations
 
-This guide outlines security best practices for deploying and maintaining the Open Source Business Automation Stack in a production environment.
+This document outlines important security considerations for your Open Source Business Automation Stack.
 
 ## Overview
 
-Security is a critical aspect of any business automation system. The stack handles sensitive business data including leads, financial information, and content, so proper security measures are essential.
+While this automation stack provides powerful functionality with zero licensing costs, proper security measures are essential to protect your business data and operations. This guide covers key security considerations and best practices for securing your deployment.
 
-## Server Security
+## Authentication
 
-### Operating System Hardening
+### n8n Authentication
 
-1. **Keep the system updated**:
-   ```bash
-   sudo apt update && sudo apt upgrade -y
-   ```
+By default, the n8n instance in the provided Docker Compose file does not have authentication enabled. For production use, enable basic authentication:
 
-2. **Enable automatic security updates**:
-   ```bash
-   sudo apt install unattended-upgrades
-   sudo dpkg-reconfigure -plow unattended-upgrades
-   ```
+1. Edit the `docker-compose.yml` file to add these environment variables to the n8n service:
 
-3. **Configure a firewall**:
-   ```bash
-   sudo apt install ufw
-   sudo ufw default deny incoming
-   sudo ufw default allow outgoing
-   sudo ufw allow ssh
-   sudo ufw allow http
-   sudo ufw allow https
-   sudo ufw enable
-   ```
+```yaml
+environment:
+  # ... existing variables
+  - N8N_BASIC_AUTH_ACTIVE=true
+  - N8N_BASIC_AUTH_USER=your_username
+  - N8N_BASIC_AUTH_PASSWORD=your_secure_password
+```
 
-4. **Disable unnecessary services**:
-   ```bash
-   sudo systemctl disable [service-name]
-   ```
+2. Use a strong, unique password for the n8n interface.
 
-### User Management
+3. Restart the services:
 
-1. **Create a dedicated user for the application**:
-   ```bash
-   sudo adduser automation
-   sudo usermod -aG docker automation
-   ```
+```bash
+docker-compose down
+docker-compose up -d
+```
 
-2. **Use SSH keys instead of passwords**:
-   ```bash
-   # On your local machine
-   ssh-keygen -t ed25519 -C "automation-server"
-   
-   # Copy the key to the server
-   ssh-copy-id automation@your-server-ip
-   
-   # Disable password authentication on the server
-   sudo nano /etc/ssh/sshd_config
-   # Set: PasswordAuthentication no
-   sudo systemctl restart sshd
-   ```
+### Metabase Authentication
 
-## Application Security
+During the initial Metabase setup, you'll be prompted to create an admin account. Ensure you:
 
-### Docker Security
+1. Use a strong, unique password for the admin account
+2. Create additional user accounts with appropriate permissions for team members
+3. Avoid sharing the admin credentials
 
-1. **Use specific version tags** instead of `latest` to ensure reproducible builds.
-
-2. **Run containers as non-root** whenever possible:
-   ```yaml
-   # Add to docker-compose.yml
-   user: "1000:1000"
-   ```
-
-3. **Limit container resources**:
-   ```yaml
-   # Add to docker-compose.yml
-   deploy:
-     resources:
-       limits:
-         cpus: '0.50'
-         memory: 512M
-   ```
-
-4. **Regularly update container images**:
-   ```bash
-   docker-compose pull
-   docker-compose up -d
-   ```
+## Network Security
 
 ### HTTPS Configuration
 
-Set up HTTPS using Let's Encrypt and Nginx:
+For production deployments, configure HTTPS using a reverse proxy:
 
-1. **Install Nginx and Certbot**:
-   ```bash
-   sudo apt install nginx certbot python3-certbot-nginx
-   ```
+1. Install Nginx:
 
-2. **Configure Nginx**:
-   ```bash
-   sudo nano /etc/nginx/sites-available/automation
-   ```
+```bash
+sudo apt-get install nginx
+```
 
-   Add the following configuration:
-   ```
-   server {
-       listen 80;
-       server_name your-domain.com;
-       location / {
-           return 301 https://$host$request_uri;
-       }
-   }
+2. Install Certbot for Let's Encrypt certificates:
 
-   server {
-       listen 443 ssl;
-       server_name your-domain.com;
+```bash
+sudo apt-get install certbot python3-certbot-nginx
+```
 
-       ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-       ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
-       ssl_protocols TLSv1.2 TLSv1.3;
-       ssl_prefer_server_ciphers on;
+3. Configure the certificates:
 
-       location / {
-           proxy_pass http://localhost:5678;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-       }
-   }
-   ```
+```bash
+sudo certbot --nginx -d your-domain.com
+```
 
-3. **Enable the site and get SSL certificates**:
-   ```bash
-   sudo ln -s /etc/nginx/sites-available/automation /etc/nginx/sites-enabled/
-   sudo nginx -t
-   sudo systemctl reload nginx
-   sudo certbot --nginx -d your-domain.com
-   ```
+4. Create an Nginx configuration file:
 
-4. **Update n8n configuration** in `docker-compose.yml`:
-   ```yaml
-   environment:
-     - N8N_PROTOCOL=https
-     - N8N_HOST=your-domain.com
-     - N8N_PORT=443
-   ```
+```bash
+sudo nano /etc/nginx/sites-available/automation-stack
+```
 
-### Authentication
+5. Add this configuration (adjust as needed):
 
-1. **Enable n8n authentication** by updating `docker-compose.yml`:
-   ```yaml
-   environment:
-     - N8N_BASIC_AUTH_ACTIVE=true
-     - N8N_BASIC_AUTH_USER=admin
-     - N8N_BASIC_AUTH_PASSWORD=use_a_secure_password
-   ```
+```
+server {
+    listen 80;
+    server_name your-domain.com;
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
 
-2. **Set up Metabase authentication** during the initial setup process.
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
 
-3. **Secure PostgreSQL** by updating `docker-compose.yml`:
-   ```yaml
-   environment:
-     - POSTGRES_PASSWORD=use_a_different_secure_password
-   ```
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
 
-## Data Security
+    location / {
+        proxy_pass http://localhost:5678;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 
-### Encryption
+server {
+    listen 443 ssl;
+    server_name metabase.your-domain.com;
 
-1. **Encrypt sensitive data in n8n workflows**:
-   - Use the `N8N_ENCRYPTION_KEY` environment variable
-   - Store API keys and credentials using n8n's credential store
+    ssl_certificate /etc/letsencrypt/live/metabase.your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/metabase.your-domain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
 
-2. **Implement encryption-at-rest** for the entire data directory:
-   ```bash
-   # Install required tools
-   sudo apt install cryptsetup
-   
-   # Create an encrypted volume (example)
-   sudo cryptsetup luksFormat /dev/sdb1
-   sudo cryptsetup luksOpen /dev/sdb1 automation-data
-   sudo mkfs.ext4 /dev/mapper/automation-data
-   sudo mount /dev/mapper/automation-data /path/to/data
-   ```
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
 
-### Backup and Recovery
+6. Enable the site:
 
-1. **Implement regular backups**:
-   ```bash
-   # Create a backup script
-   nano backup.sh
-   ```
+```bash
+sudo ln -s /etc/nginx/sites-available/automation-stack /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
 
-   Add the following content:
-   ```bash
-   #!/bin/bash
-   TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-   BACKUP_DIR="/path/to/backups"
-   
-   # Create backup directory if it doesn't exist
-   mkdir -p $BACKUP_DIR
-   
-   # Stop containers to ensure data consistency
-   docker-compose down
-   
-   # Create a compressed backup of the data directory
-   tar -czf $BACKUP_DIR/automation-data-$TIMESTAMP.tar.gz /path/to/automation/data
-   
-   # Restart containers
-   docker-compose up -d
-   
-   # Remove backups older than 30 days
-   find $BACKUP_DIR -name "automation-data-*.tar.gz" -mtime +30 -delete
-   ```
+### Firewall Configuration
 
-2. **Make the script executable and schedule it**:
-   ```bash
-   chmod +x backup.sh
-   
-   # Schedule with cron (runs daily at 2 AM)
-   crontab -e
-   0 2 * * * /path/to/backup.sh
-   ```
+Configure a firewall to restrict access:
+
+```bash
+# Install UFW (Uncomplicated Firewall)
+sudo apt-get install ufw
+
+# Allow SSH
+sudo ufw allow ssh
+
+# Allow HTTP and HTTPS
+sudo ufw allow 80
+sudo ufw allow 443
+
+# Enable the firewall
+sudo ufw enable
+
+# Check status
+sudo ufw status
+```
+
+With this configuration, only ports 22 (SSH), 80 (HTTP), and 443 (HTTPS) will be accessible from the outside.
 
 ## Webhook Security
 
-Webhooks can be a potential security risk. Implement these precautions:
+The workflows use webhooks for receiving data and notifications. Secure these endpoints:
 
-1. **Use webhook authentication** by adding a secret token to webhook URLs
+1. Implement webhook authentication by adding a secret token to your webhook URLs:
 
-2. **Validate webhook payloads** in your Function nodes
+```bash
+# Example webhook URL with authentication token
+https://your-domain.com/webhook/lead-capture?token=your_secret_token
+```
 
-3. **Implement rate limiting** in your Nginx configuration:
-   ```
-   location /webhook/ {
-       limit_req zone=webhook burst=10 nodelay;
-       proxy_pass http://localhost:5678;
-       # other proxy settings...
-   }
-   ```
+2. Verify this token in your workflow by adding a Function node after each webhook that checks for the token:
 
-4. **Log webhook requests** for auditing and monitoring
+```javascript
+// Check webhook token
+if ($input.item.query.token !== 'your_secret_token') {
+  return {
+    json: {
+      error: 'Unauthorized',
+      status: 401
+    }
+  };
+}
+```
 
-## Regular Security Audits
+3. Use HTTPS for all webhook URLs to encrypt the data in transit.
 
-Schedule regular security audits:
+## Data Security
 
-1. **Review server logs** for suspicious activity
-   ```bash
-   sudo journalctl -u docker
-   ```
+### Sensitive Data Handling
 
-2. **Check for unauthorized access attempts**
-   ```bash
-   sudo grep "Failed password" /var/log/auth.log
-   ```
+1. Avoid storing sensitive data like passwords, API keys, or personal information in plain text within workflow data files.
 
-3. **Scan for vulnerabilities**
-   ```bash
-   sudo apt install nmap
-   nmap -sV your-server-ip
-   ```
+2. For workflows that need to process sensitive data, implement data masking or encryption:
 
-4. **Review workflow permissions** and access control in n8n and Metabase
+```javascript
+// Example of masking sensitive data
+if (data.creditCardNumber) {
+  // Store only the last 4 digits
+  data.creditCardNumber = '****-****-****-' + data.creditCardNumber.slice(-4);
+}
+```
 
-## Incident Response Plan
+3. For API keys and credentials, use the n8n credentials manager.
 
-Prepare an incident response plan that includes:
+### Backup Security
 
-1. **Detection procedures**: How to identify security breaches
-2. **Containment strategy**: Steps to limit damage
-3. **Eradication process**: How to remove the threat
-4. **Recovery plan**: Steps to restore systems
-5. **Documentation requirements**: What to record during an incident
-6. **Post-incident review**: How to learn from the incident
+1. Encrypt your backups:
 
-## Additional Resources
+```bash
+# Example: Create an encrypted backup of the data directory
+tar -czf - data | gpg -c > backup-$(date +%Y%m%d).tar.gz.gpg
+```
 
-- [Docker Security Documentation](https://docs.docker.com/engine/security/)
-- [n8n Security Best Practices](https://docs.n8n.io/hosting/security/)
-- [OWASP Top Ten Project](https://owasp.org/www-project-top-ten/)
-- [Let's Encrypt Documentation](https://letsencrypt.org/docs/)
+2. Store backups securely, preferably off-site.
+
+3. Test restoration procedures regularly to ensure backups are valid.
+
+## Regular Updates
+
+Keep all components of the stack updated:
+
+```bash
+# Update Docker images
+docker-compose pull
+
+# Restart with updated images
+docker-compose up -d
+
+# Update the host system
+sudo apt-get update
+sudo apt-get upgrade
+```
+
+## Security Auditing
+
+Regularly audit your security setup:
+
+1. Check for unauthorized access in logs:
+
+```bash
+docker-compose logs n8n | grep "Failed login"
+```
+
+2. Review workflow permissions and access controls.
+
+3. Scan for vulnerabilities in your server:
+
+```bash
+# Install security scanning tools
+sudo apt-get install lynis
+
+# Run a security audit
+sudo lynis audit system
+```
+
+## Conclusion
+
+By implementing these security measures, you can significantly enhance the security posture of your Open Source Business Automation Stack. Remember that security is an ongoing process that requires regular attention and updates.
+
+For additional security resources, consult:
+- [n8n Security Documentation](https://docs.n8n.io/hosting/security/)
+- [Metabase Security Guide](https://www.metabase.com/docs/latest/operations-guide/security-guidelines)
+- [PostgreSQL Security Documentation](https://www.postgresql.org/docs/current/security.html)
