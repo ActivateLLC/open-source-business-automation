@@ -85,39 +85,42 @@ For optimal performance and reliability:
 2. **Monitoring**
    - Check workflow execution logs periodically
    - Set up notifications for workflow failures
-   - Monitor disk space for file storage
+   - Monitor disk space for data storage
 
-3. **Performance Optimization**
-   - Schedule resource-intensive tasks during off-hours
-   - Archive old data files periodically
-   - Use file compression for large datasets
+3. **Testing**
+   - Test modifications in a development environment first
+   - Use sample data to verify workflow behavior
+   - Validate outputs before implementing in production
 
-4. **Security**
-   - Implement access controls for webhook endpoints
-   - Use environment variables for sensitive configuration
-   - Review and audit workflow access regularly
+4. **Documentation**
+   - Document any customizations you make
+   - Keep track of integration endpoints
+   - Maintain a change log for workflow modifications
 
 ## Extending the System
 
-These workflows provide a foundation that can be extended in several ways:
+The automation stack can be extended with additional workflows:
 
-1. **Additional Workflows**
-   - HR and recruitment automation
-   - Customer support ticket management
-   - Project management and resource allocation
-   - Inventory and supply chain management
+1. **HR Automation**
+   - Employee onboarding/offboarding
+   - Time off request processing
+   - Performance review workflows
 
-2. **Advanced Analytics**
-   - Create Metabase dashboards to visualize workflow data
-   - Set up trend analysis and forecasting
-   - Implement business intelligence reporting
+2. **Customer Support**
+   - Ticket routing and prioritization
+   - Automated responses to common questions
+   - Customer satisfaction tracking
 
-3. **AI Integration**
-   - Connect to open-source AI models for content generation
-   - Implement sentiment analysis for customer feedback
-   - Add predictive analytics for lead scoring and sales forecasting
+3. **Project Management**
+   - Task assignment and tracking
+   - Deadline monitoring
+   - Status reporting
 
-4. **Mobile Access**
-   - Set up mobile notifications for critical events
-   - Create mobile-friendly dashboards for on-the-go monitoring
-   - Implement SMS notifications for urgent matters
+To add new workflows:
+
+1. Create a new workflow in n8n
+2. Design the data flow and processing logic
+3. Add necessary webhook endpoints or cron triggers
+4. Create appropriate data storage directories
+5. Document the workflow following the same pattern as existing workflows
+6. Test thoroughly before deploying to production
