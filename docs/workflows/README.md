@@ -87,50 +87,60 @@ For optimal performance and reliability:
    - Set up notifications for workflow failures
    - Monitor disk space for file storage
 
-3. **Error Handling**
-   - Implement fallback mechanisms for critical processes
-   - Use error catching in Function nodes
-   - Create recovery procedures for failed workflows
+3. **Testing**
+   - Test workflows with sample data before using in production
+   - Validate changes in a staging environment
+   - Perform end-to-end tests when making significant changes
 
-4. **Performance Optimization**
-   - Keep JSON data files under 10MB for optimal performance
-   - Implement data archiving for older records
-   - Schedule resource-intensive tasks during off-hours
+4. **Documentation**
+   - Document custom changes to workflows
+   - Keep notes on integration points and configurations
+   - Update team members on changes to business logic
 
-## Extending the System
+## Advanced Use Cases
 
-The automation stack can be extended in several ways:
+These workflows can be expanded to support additional use cases:
 
-1. **Additional Workflows**
-   - HR automation (onboarding, time tracking, performance reviews)
-   - Customer support automation (ticket routing, satisfaction surveys)
-   - Project management (task assignment, progress reporting)
+1. **Multi-channel Lead Generation**
+   - Add nodes for capturing leads from social media
+   - Integrate with webinar platforms
+   - Add lead enrichment from additional data sources
 
-2. **Enhanced Analytics**
-   - Create custom Metabase dashboards for cross-workflow insights
-   - Implement predictive analytics using n8n and open-source ML tools
-   - Develop real-time monitoring dashboards
+2. **Advanced Content Personalization**
+   - Expand content templates for industry-specific messaging
+   - Add nodes for personalizing content based on audience segments
+   - Implement A/B testing for content effectiveness
 
-3. **External Integrations**
-   - Connect to additional open-source tools (ERP, CRM, HRM systems)
-   - Implement API integrations with existing business systems
-   - Create custom webhook receivers for specialized applications
+3. **Financial Forecasting**
+   - Add predictive analytics to financial reports
+   - Implement cash flow forecasting
+   - Add budget tracking against actuals
+
+4. **Cross-workflow Integrations**
+   - Connect lead data to content targeting
+   - Link financial metrics to marketing budget allocation
+   - Create unified dashboards across all business functions
 
 ## Troubleshooting
 
 Common issues and their solutions:
 
-1. **Webhook Connectivity**
-   - Ensure firewall allows incoming connections to n8n
-   - Verify webhook URLs are correctly formatted
-   - Check network connectivity between systems
+1. **Workflow Execution Failures**
+   - Check for syntax errors in Function nodes
+   - Verify file paths and permissions
+   - Confirm webhook URLs are accessible
 
-2. **File Storage Issues**
-   - Monitor disk space regularly
-   - Implement file rotation/archiving for older data
-   - Check file permissions if write operations fail
+2. **Data Inconsistencies**
+   - Validate JSON file structures
+   - Check for race conditions in file operations
+   - Implement error handling for edge cases
 
-3. **Workflow Execution Failures**
-   - Check n8n execution logs for error messages
-   - Verify input data format matches expected schema
-   - Test function nodes in isolation with sample data
+3. **Performance Issues**
+   - Optimize JavaScript code in Function nodes
+   - Implement pagination for large datasets
+   - Schedule resource-intensive operations during off-hours
+
+4. **Integration Problems**
+   - Verify API endpoints and authentication
+   - Check payload formats match expected schemas
+   - Implement retry logic for transient failures
