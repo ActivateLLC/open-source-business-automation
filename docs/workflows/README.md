@@ -87,60 +87,37 @@ For optimal performance and reliability:
    - Set up notifications for workflow failures
    - Monitor disk space for file storage
 
-3. **Testing**
-   - Test workflows with sample data before using in production
-   - Validate changes in a staging environment
-   - Perform end-to-end tests when making significant changes
+3. **Performance Optimization**
+   - Schedule resource-intensive tasks during off-hours
+   - Archive old data files periodically
+   - Use file compression for large datasets
 
-4. **Documentation**
-   - Document custom changes to workflows
-   - Keep notes on integration points and configurations
-   - Update team members on changes to business logic
+4. **Security**
+   - Implement access controls for webhook endpoints
+   - Use environment variables for sensitive configuration
+   - Review and audit workflow access regularly
 
-## Advanced Use Cases
+## Extending the System
 
-These workflows can be expanded to support additional use cases:
+These workflows provide a foundation that can be extended in several ways:
 
-1. **Multi-channel Lead Generation**
-   - Add nodes for capturing leads from social media
-   - Integrate with webinar platforms
-   - Add lead enrichment from additional data sources
+1. **Additional Workflows**
+   - HR and recruitment automation
+   - Customer support ticket management
+   - Project management and resource allocation
+   - Inventory and supply chain management
 
-2. **Advanced Content Personalization**
-   - Expand content templates for industry-specific messaging
-   - Add nodes for personalizing content based on audience segments
-   - Implement A/B testing for content effectiveness
+2. **Advanced Analytics**
+   - Create Metabase dashboards to visualize workflow data
+   - Set up trend analysis and forecasting
+   - Implement business intelligence reporting
 
-3. **Financial Forecasting**
-   - Add predictive analytics to financial reports
-   - Implement cash flow forecasting
-   - Add budget tracking against actuals
+3. **AI Integration**
+   - Connect to open-source AI models for content generation
+   - Implement sentiment analysis for customer feedback
+   - Add predictive analytics for lead scoring and sales forecasting
 
-4. **Cross-workflow Integrations**
-   - Connect lead data to content targeting
-   - Link financial metrics to marketing budget allocation
-   - Create unified dashboards across all business functions
-
-## Troubleshooting
-
-Common issues and their solutions:
-
-1. **Workflow Execution Failures**
-   - Check for syntax errors in Function nodes
-   - Verify file paths and permissions
-   - Confirm webhook URLs are accessible
-
-2. **Data Inconsistencies**
-   - Validate JSON file structures
-   - Check for race conditions in file operations
-   - Implement error handling for edge cases
-
-3. **Performance Issues**
-   - Optimize JavaScript code in Function nodes
-   - Implement pagination for large datasets
-   - Schedule resource-intensive operations during off-hours
-
-4. **Integration Problems**
-   - Verify API endpoints and authentication
-   - Check payload formats match expected schemas
-   - Implement retry logic for transient failures
+4. **Mobile Access**
+   - Set up mobile notifications for critical events
+   - Create mobile-friendly dashboards for on-the-go monitoring
+   - Implement SMS notifications for urgent matters
