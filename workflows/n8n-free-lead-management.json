@@ -1,0 +1,463 @@
+{
+  "name": "Lead Management System (Free/Open Source)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-capture",
+        "options": {}
+      },
+      "id": "e9b1c5c5-13bd-42bf-b2fa-45289a4d3f2e",
+      "name": "Lead Capture Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lead data standardization and enrichment\nconst lead = $input.item.json;\n\n// Standardize email (lowercase and trim)\nif (lead.email) {\n  lead.email = lead.email.toLowerCase().trim();\n}\n\n// Standardize name (capitalize first letter of each word)\nif (lead.name) {\n  lead.name = lead.name\n    .split(' ')\n    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())\n    .join(' ');\n}\n\n// Standardize phone (remove non-numeric characters)\nif (lead.phone) {\n  lead.phone = lead.phone.replace(/\\D/g, '');\n}\n\n// Calculate lead score based on available information\nlet score = 0;\n\n// Add points for completeness of information\nif (lead.email) score += 10;\nif (lead.phone) score += 10;\nif (lead.company) score += 15;\nif (lead.jobTitle) score += 10;\n\n// Add points for specific criteria\nif (lead.source === 'referral') score += 25;\nif (lead.source === 'organic_search') score += 15;\nif (lead.source === 'paid_search') score += 10;\n\n// Add industry-specific scoring\nconst highValueIndustries = ['healthcare', 'finance', 'technology', 'manufacturing'];\nif (lead.industry && highValueIndustries.includes(lead.industry.toLowerCase())) {\n  score += 20;\n}\n\n// Add company size scoring\nif (lead.companySize) {\n  const size = parseInt(lead.companySize);\n  if (size > 1000) score += 25;\n  else if (size > 100) score += 15;\n  else if (size > 10) score += 5;\n}\n\n// Calculate lead tier based on score\nlet tier = 'cold';\nif (score >= 50) tier = 'hot';\nelse if (score >= 30) tier = 'warm';\n\n// Add calculated fields to the lead\nlead.score = score;\nlead.tier = tier;\nlead.processed_date = new Date().toISOString();\n\n// Return the standardized and enriched lead\nreturn {json: lead};"
+      },
+      "id": "cb8e321a-9d4e-4c7f-8894-938fecd7ea87",
+      "name": "Lead Enrichment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"tier\"]}}",
+              "operation": "equal",
+              "value2": "hot"
+            }
+          ]
+        }
+      },
+      "id": "58f53257-d73e-4992-8cb9-e9720955de62",
+      "name": "Route By Lead Tier",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "hot_leads",
+        "options": {}
+      },
+      "id": "8d5e2c27-2ab3-4aeb-a98f-f9473c1e7c45",
+      "name": "Hot Leads File",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if we have existing leads\nlet leads = [];\nif ($input.item.json.hot_leads && $input.item.json.hot_leads.length > 0) {\n  try {\n    // Parse the existing leads from the file\n    leads = JSON.parse($input.item.json.hot_leads.toString());\n  } catch (error) {\n    // If parsing fails, start with an empty array\n    leads = [];\n  }\n}\n\n// Add the new lead\nleads.push($input.item.json);\n\n// Return all leads\nreturn {json: {leads}};"
+      },
+      "id": "5f73e8d2-32e5-41b1-bb7c-4512d3e9a654",
+      "name": "Process Hot Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "=/data/hot_leads.json",
+        "options": {}
+      },
+      "id": "a2b1d3c4-e5f6-47g8-h9i0-j1k2l3m4n5o6",
+      "name": "Save Hot Leads",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "warm_leads",
+        "options": {}
+      },
+      "id": "6f87e5d4-c3b2-a1e0-p9o8-i7u6y5t4r3e2",
+      "name": "Warm Leads File",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if we have existing leads\nlet leads = [];\nif ($input.item.json.warm_leads && $input.item.json.warm_leads.length > 0) {\n  try {\n    // Parse the existing leads from the file\n    leads = JSON.parse($input.item.json.warm_leads.toString());\n  } catch (error) {\n    // If parsing fails, start with an empty array\n    leads = [];\n  }\n}\n\n// Add the new lead\nleads.push($input.item.json);\n\n// Return all leads\nreturn {json: {leads}};"
+      },
+      "id": "w1o2p3q4-r5s6-t7u8-v9w0-x1y2z3a4b5c6",
+      "name": "Process Warm Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "=/data/warm_leads.json",
+        "options": {}
+      },
+      "id": "d5e6f7g8-h9i0-j1k2-l3m4-n5o6p7q8r9s0",
+      "name": "Save Warm Leads",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "cold_leads",
+        "options": {}
+      },
+      "id": "t1u2v3w4-x5y6-z7a8-b9c0-d1e2f3g4h5i6",
+      "name": "Cold Leads File",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        900,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if we have existing leads\nlet leads = [];\nif ($input.item.json.cold_leads && $input.item.json.cold_leads.length > 0) {\n  try {\n    // Parse the existing leads from the file\n    leads = JSON.parse($input.item.json.cold_leads.toString());\n  } catch (error) {\n    // If parsing fails, start with an empty array\n    leads = [];\n  }\n}\n\n// Add the new lead\nleads.push($input.item.json);\n\n// Return all leads\nreturn {json: {leads}};"
+      },
+      "id": "j1k2l3m4-n5o6-p7q8-r9s0-t1u2v3w4x5y6",
+      "name": "Process Cold Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "=/data/cold_leads.json",
+        "options": {}
+      },
+      "id": "z7a8b9c0-d1e2-f3g4-h5i6-j7k8l9m0n1o2",
+      "name": "Save Cold Leads",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node[\"Webhook Configuration\"].json[\"hot_lead_webhook_url\"]}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "p0o9i8u7-y6t5-r4e3-w2q1-a0s9d8f7g6h5",
+      "name": "Hot Lead Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [
+        1500,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "hot_lead_webhook_url",
+              "value": "https://hooks.example.org/hot-leads"
+            },
+            {
+              "name": "warm_lead_webhook_url",
+              "value": "https://hooks.example.org/warm-leads"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "j4k5l6m7-n8o9-p0q1-r2s3-t4u5v6w7x8y9",
+      "name": "Webhook Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node[\"Webhook Configuration\"].json[\"warm_lead_webhook_url\"]}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "b3c4d5e6-f7g8-h9i0-j1k2-l3m4n5o6p7q8",
+      "name": "Warm Lead Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [
+        1500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "days"
+            }
+          ]
+        }
+      },
+      "id": "r9s0t1u2-v3w4-x5y6-z7a8-b9c0d1e2f3g4",
+      "name": "Daily Lead Summary",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate a lead summary report\nconst fs = require('fs');\nconst path = require('path');\n\n// Define file paths\nconst hotLeadsPath = '/data/hot_leads.json';\nconst warmLeadsPath = '/data/warm_leads.json';\nconst coldLeadsPath = '/data/cold_leads.json';\n\n// Function to safely read and parse a JSON file\nfunction readLeadsFile(filePath) {\n  try {\n    if (fs.existsSync(filePath)) {\n      const data = fs.readFileSync(filePath, 'utf8');\n      return JSON.parse(data);\n    }\n  } catch (error) {\n    console.error(`Error reading ${filePath}: ${error.message}`);\n  }\n  return [];\n}\n\n// Read lead data\nconst hotLeads = readLeadsFile(hotLeadsPath);\nconst warmLeads = readLeadsFile(warmLeadsPath);\nconst coldLeads = readLeadsFile(coldLeadsPath);\n\n// Get today's date\nconst today = new Date();\nconst yesterday = new Date(today);\nyesterday.setDate(yesterday.getDate() - 1);\n\n// Filter leads from the last 24 hours\nconst isRecent = (lead) => {\n  const processedDate = new Date(lead.processed_date);\n  return processedDate >= yesterday && processedDate <= today;\n};\n\nconst recentHotLeads = hotLeads.filter(isRecent);\nconst recentWarmLeads = warmLeads.filter(isRecent);\nconst recentColdLeads = coldLeads.filter(isRecent);\n\n// Generate summary\nconst summary = {\n  date: today.toISOString().split('T')[0],\n  total_leads: recentHotLeads.length + recentWarmLeads.length + recentColdLeads.length,\n  hot_leads: recentHotLeads.length,\n  warm_leads: recentWarmLeads.length,\n  cold_leads: recentColdLeads.length,\n  sources: {},\n  industries: {}\n};\n\n// Analyze lead sources and industries\nconst allRecentLeads = [...recentHotLeads, ...recentWarmLeads, ...recentColdLeads];\n\nallRecentLeads.forEach(lead => {\n  // Count sources\n  if (lead.source) {\n    summary.sources[lead.source] = (summary.sources[lead.source] || 0) + 1;\n  }\n  \n  // Count industries\n  if (lead.industry) {\n    summary.industries[lead.industry] = (summary.industries[lead.industry] || 0) + 1;\n  }\n});\n\nreturn { json: summary };"
+      },
+      "id": "h1i2j3k4-l5m6-n7o8-p9q0-r1s2t3u4v5w6",
+      "name": "Generate Lead Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "=/data/lead_summaries/lead_summary_{{$json[\"date\"]}}.json",
+        "options": {}
+      },
+      "id": "x7y8z9a0-b1c2-d3e4-f5g6-h7i8j9k0l1m2",
+      "name": "Save Lead Summary",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Lead Capture Webhook": {
+      "main": [
+        [
+          {
+            "node": "Lead Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Route By Lead Tier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Lead Tier": {
+      "main": [
+        [
+          {
+            "node": "Hot Leads File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Warm Leads File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cold Leads File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hot Leads File": {
+      "main": [
+        [
+          {
+            "node": "Process Hot Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Hot Leads": {
+      "main": [
+        [
+          {
+            "node": "Save Hot Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Hot Leads": {
+      "main": [
+        [
+          {
+            "node": "Hot Lead Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Warm Leads File": {
+      "main": [
+        [
+          {
+            "node": "Process Warm Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Warm Leads": {
+      "main": [
+        [
+          {
+            "node": "Save Warm Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Warm Leads": {
+      "main": [
+        [
+          {
+            "node": "Warm Lead Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cold Leads File": {
+      "main": [
+        [
+          {
+            "node": "Process Cold Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Cold Leads": {
+      "main": [
+        [
+          {
+            "node": "Save Cold Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Lead Summary": {
+      "main": [
+        [
+          {
+            "node": "Generate Lead Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Lead Summary": {
+      "main": [
+        [
+          {
+            "node": "Save Lead Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
