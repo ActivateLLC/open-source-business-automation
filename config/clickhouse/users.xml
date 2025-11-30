@@ -1,6 +1,5 @@
-# ClickHouse custom configuration
-# Analytics database settings
-
+<!-- ClickHouse custom configuration -->
+<!-- Analytics database settings -->
 <profiles>
     <default>
         <max_memory_usage>10000000000</max_memory_usage>

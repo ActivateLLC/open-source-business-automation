@@ -113,7 +113,7 @@ docker-compose up -d
 |---------|-----|-------------|
 | Traefik Dashboard | http://localhost:8080 | - |
 | Activepieces | http://localhost:8089 | Create on first access |
-| Temporal UI | http://localhost:8088 | - |
+| Temporal UI | http://localhost:8087 | - |
 | Kafka UI | http://localhost:8090 | - |
 | Apache Superset | http://localhost:8088 | admin / admin |
 | Metabase | http://localhost:3000 | Create on first access |

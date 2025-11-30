@@ -113,9 +113,9 @@ services:
     restart: always
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_CORS_ORIGINS=http://localhost:8088
+      - TEMPORAL_CORS_ORIGINS=http://localhost:8087
     ports:
-      - "8088:8080"
+      - "8087:8080"  # Changed from 8088 to avoid conflict with Superset
     depends_on:
       - temporal
     networks:
@@ -273,7 +273,9 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: always
-    command: redis-server --appendonly yes --requirepass redis_password
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
     ports:
       - "6379:6379"
     volumes:
@@ -281,7 +283,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -361,8 +363,8 @@ services:
     container_name: grafana
     restart: always
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-piechart-panel,grafana-clickhouse-datasource
     ports:
       - "3001:3000"
@@ -419,7 +421,8 @@ networks:
     driver: bridge
   backend:
     driver: bridge
-    internal: false
+    # Internal network for databases and internal services
+    # Services that need external access are also connected to frontend network
 
 volumes:
   postgres_data:

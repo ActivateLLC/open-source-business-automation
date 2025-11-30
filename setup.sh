@@ -187,7 +187,14 @@ fi
 # =============================================================================
 
 chmod -R 755 data/n8n/data
-chmod 600 .env 2>/dev/null || true
+
+# Secure the .env file if it exists
+if [ -f .env ]; then
+    chmod 600 .env
+    print_status ".env file permissions secured (600)"
+else
+    print_warning ".env file not found, skipping permission change"
+fi
 
 print_status "Permissions set"
 
@@ -210,7 +217,7 @@ echo "    • Traefik Dashboard:   http://localhost:8080"
 echo ""
 echo "  Automation Orchestration:"
 echo "    • Activepieces:        http://localhost:8089"
-echo "    • Temporal UI:         http://localhost:8088"
+echo "    • Temporal UI:         http://localhost:8087"
 echo "    • Kafka UI:            http://localhost:8090"
 echo "    • n8n (legacy):        http://localhost:5678"
 echo ""

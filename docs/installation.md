@@ -120,7 +120,7 @@ All services should show as "Up" or "healthy".
 | Service | URL | Default Credentials |
 |---------|-----|---------------------|
 | Activepieces | http://localhost:8089 | Create on first access |
-| Temporal UI | http://localhost:8088 | None required |
+| Temporal UI | http://localhost:8087 | None required |
 | Kafka UI | http://localhost:8090 | None required |
 | n8n (legacy) | http://localhost:5678 | Create on first access |
 

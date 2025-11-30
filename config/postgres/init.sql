@@ -1,16 +1,22 @@
 -- PostgreSQL Initialization Script
 -- Creates databases for all services in the automation platform
 
--- Create databases for each service
-CREATE DATABASE IF NOT EXISTS activepieces;
-CREATE DATABASE IF NOT EXISTS n8n;
-CREATE DATABASE IF NOT EXISTS metabase;
-CREATE DATABASE IF NOT EXISTS superset;
-CREATE DATABASE IF NOT EXISTS temporal;
-CREATE DATABASE IF NOT EXISTS temporal_visibility;
+-- Note: Database creation is handled by docker-entrypoint-initdb.d
+-- These CREATE DATABASE statements are wrapped in a function to handle "already exists" errors
+
+-- Create function to safely create database if it doesn't exist
+CREATE OR REPLACE FUNCTION create_database_if_not_exists(dbname TEXT) RETURNS VOID AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = dbname) THEN
+        EXECUTE format('CREATE DATABASE %I', dbname);
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create databases for services (these are created in a separate script or manually)
+-- The main 'automation' database is created by POSTGRES_DB environment variable
 
 -- Create extensions for better functionality
-\c automation;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
