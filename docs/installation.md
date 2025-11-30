@@ -4,9 +4,9 @@ This guide provides step-by-step instructions for setting up the Open Source Bus
 
 ## Prerequisites
 
-- A Linux server with at least 4GB RAM and 2 CPU cores
+- A Linux server with at least 8GB RAM and 4 CPU cores (16GB+ recommended for production)
 - Docker and Docker Compose installed
-- 20GB+ of storage space
+- 50GB+ of storage space (200GB+ recommended for production)
 - Internet connectivity for the server
 - Basic command line knowledge
 
@@ -36,7 +36,7 @@ sudo apt-get update
 sudo apt-get install -y docker-ce
 
 # Install Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.18.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
 
 # Add your user to the docker group (optional but recommended)
@@ -71,72 +71,111 @@ This script will create the necessary directory structure and template files.
 nano docker-compose.yml
 ```
 
-2. Make sure to change the `N8N_ENCRYPTION_KEY` to a strong, random string.
+2. **Critical Security Settings - Change These Values:**
+   - `POSTGRES_PASSWORD`: Database password
+   - `AP_JWT_SECRET`: Activepieces JWT secret
+   - `AP_ENCRYPTION_KEY`: Activepieces encryption key
+   - `N8N_ENCRYPTION_KEY`: n8n encryption key
+   - `SUPERSET_SECRET_KEY`: Apache Superset secret key
+   - `APP_KEY`: NocoBase application key
 
 ### 5. Start the Services
 
 ```bash
+# Pull all images (this may take a while)
+docker-compose pull
+
+# Start all services
 docker-compose up -d
+
+# Check status
+docker-compose ps
 ```
 
 ### 6. Access the Platforms
 
-- n8n: `http://your-server-ip:5678`
-- Metabase: `http://your-server-ip:3000`
+After the services are running, access them at these URLs:
 
-### 7. Import the Workflows
+| Service | URL | Default Credentials |
+|---------|-----|---------------------|
+| **NocoBase** (Main UI) | `http://your-server-ip:13000` | admin@example.com / admin123 |
+| **Activepieces** (Automation) | `http://your-server-ip:8080` | Set during first login |
+| **Temporal UI** (Workflows) | `http://your-server-ip:8233` | No auth by default |
+| **Apache Superset** (Analytics) | `http://your-server-ip:8088` | admin / admin123 |
+| **Metabase** (Dashboards) | `http://your-server-ip:3000` | Set during first login |
+| **Grafana** (Monitoring) | `http://your-server-ip:3001` | admin / admin123 |
+| **n8n** (Legacy Workflows) | `http://your-server-ip:5678` | Set during first login |
 
-1. Log in to n8n at `http://your-server-ip:5678`
+### 7. Initialize the Databases
 
-2. Navigate to the Workflows section
+The database initialization script runs automatically on first start. To verify:
 
-3. For each workflow JSON file in the `workflows` directory:
-   - Click "Import from File"
-   - Select the workflow JSON file
-   - Click "Import"
-   - Save the workflow
+```bash
+# Connect to PostgreSQL
+docker-compose exec postgres psql -U admin -d business_automation
 
-4. Verify that all three workflows are imported:
-   - Lead Management System (Free/Open Source)
-   - Content Generation & Distribution Workflow
-   - Financial Operations Automation
+# List tables
+\dt
 
-### 8. Set Up Metabase
+# Exit
+\q
+```
 
-1. Access Metabase in your browser at `http://your-server-ip:3000`
+### 8. Configure Data Sources in BI Tools
 
-2. Follow the setup wizard to create your admin account
+#### Apache Superset
+1. Access Superset at `http://your-server-ip:8088`
+2. Go to Settings > Database Connections
+3. Add connections for:
+   - PostgreSQL: `postgresql://admin:supersecret@postgres:5432/business_automation`
+   - ClickHouse: `clickhouse+http://admin:supersecret@clickhouse:8123/analytics`
 
-3. When prompted for database connection, choose to connect to the PostgreSQL database:
+#### Metabase
+1. Access Metabase at `http://your-server-ip:3000`
+2. Follow the setup wizard
+3. Connect to PostgreSQL:
    - Host: postgres
    - Port: 5432
-   - Database: n8n
-   - Username: n8n
-   - Password: n8n_password
+   - Database: business_automation
+   - Username: admin
+   - Password: supersecret
+
+#### Grafana
+1. Access Grafana at `http://your-server-ip:3001`
+2. Go to Configuration > Data Sources
+3. Add data sources for PostgreSQL, ClickHouse, and Redis
+
+### 9. Import Workflows
+
+#### For Activepieces:
+1. Access Activepieces at `http://your-server-ip:8080`
+2. Create your automation flows using the visual builder
+3. Configure connections to your services
+
+#### For n8n (Legacy):
+1. Log in to n8n at `http://your-server-ip:5678`
+2. Navigate to the Workflows section
+3. Import workflow JSON files from the `workflows` directory
 
 ## Security Considerations
 
-For production use, consider implementing these security measures:
+For production use, implement these security measures:
 
-1. **Enable HTTPS**:
-   - Use a reverse proxy like Nginx with Let's Encrypt certificates
-   - Update the n8n environment variables to use HTTPS
+### 1. Enable HTTPS
 
-2. **Password Protection**:
-   - Enable n8n authentication by setting `N8N_BASIC_AUTH_ACTIVE=true`
-   - Set username and password with `N8N_BASIC_AUTH_USER` and `N8N_BASIC_AUTH_PASSWORD`
+Use a reverse proxy like Nginx with Let's Encrypt certificates:
 
-3. **Firewall Configuration**:
-   - Restrict access to your server using a firewall (UFW or iptables)
-   - Only expose necessary ports (80/443 for web, 22 for SSH)
+```bash
+# Install Nginx and Certbot
+sudo apt-get install -y nginx certbot python3-certbot-nginx
 
-4. **Regular Backups**:
-   - Implement automated backups of the data directory
-   - Test restoration procedures regularly
-
-Example Nginx configuration for HTTPS:
-
+# Get SSL certificate
+sudo certbot --nginx -d your-domain.com
 ```
+
+Example Nginx configuration for all services:
+
+```nginx
 server {
     listen 80;
     server_name your-domain.com;
@@ -154,8 +193,59 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
 
-    location / {
-        proxy_pass http://localhost:5678;
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+
+    # NocoBase
+    location /nocobase/ {
+        proxy_pass http://localhost:13000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Activepieces
+    location /automation/ {
+        proxy_pass http://localhost:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Temporal UI
+    location /temporal/ {
+        proxy_pass http://localhost:8233/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Superset
+    location /superset/ {
+        proxy_pass http://localhost:8088/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Metabase
+    location /metabase/ {
+        proxy_pass http://localhost:3000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Grafana
+    location /grafana/ {
+        proxy_pass http://localhost:3001/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -164,32 +254,109 @@ server {
 }
 ```
 
+### 2. Firewall Configuration
+
+```bash
+# For Ubuntu/Debian with UFW
+sudo ufw allow ssh
+sudo ufw allow http
+sudo ufw allow https
+sudo ufw enable
+
+# Block direct access to internal services
+sudo ufw deny 5678    # n8n
+sudo ufw deny 5432    # PostgreSQL
+sudo ufw deny 6333    # Qdrant
+sudo ufw deny 8123    # ClickHouse
+sudo ufw deny 6379    # Redis
+sudo ufw deny 9092    # Kafka
+sudo ufw deny 7233    # Temporal
+```
+
+### 3. Change Default Passwords
+
+Edit `docker-compose.yml` and change all default passwords before deploying to production.
+
+### 4. Regular Backups
+
+Implement automated backups:
+
+```bash
+# Create backup script
+cat > backup.sh << 'EOF'
+#!/bin/bash
+BACKUP_DIR="/backups/$(date +%Y-%m-%d)"
+mkdir -p "$BACKUP_DIR"
+
+# Backup PostgreSQL
+docker-compose exec -T postgres pg_dumpall -U admin > "$BACKUP_DIR/postgres_backup.sql"
+
+# Backup volumes
+docker run --rm -v postgres_data:/data -v "$BACKUP_DIR":/backup alpine tar czf /backup/postgres_data.tar.gz /data
+docker run --rm -v qdrant_data:/data -v "$BACKUP_DIR":/backup alpine tar czf /backup/qdrant_data.tar.gz /data
+docker run --rm -v clickhouse_data:/data -v "$BACKUP_DIR":/backup alpine tar czf /backup/clickhouse_data.tar.gz /data
+
+echo "Backup completed: $BACKUP_DIR"
+EOF
+
+chmod +x backup.sh
+```
+
 ## Troubleshooting
 
 ### Common Issues
 
-1. **n8n Not Starting**:
-   - Check logs: `docker-compose logs n8n`
-   - Verify PostgreSQL connection
-   - Ensure proper volume permissions
+1. **Service Not Starting**:
+   ```bash
+   docker-compose logs <service_name>
+   ```
 
-2. **Webhook Connection Issues**:
-   - Verify network/firewall settings
-   - Check webhook URL formatting
-   - Test with curl commands
+2. **Database Connection Issues**:
+   ```bash
+   docker-compose exec postgres pg_isready -U admin
+   ```
 
-3. **Database Connection Problems**:
-   - Check PostgreSQL logs: `docker-compose logs postgres`
-   - Verify credentials match across services
-   - Check database availability
+3. **Check All Container Status**:
+   ```bash
+   docker-compose ps
+   ```
 
-4. **Workflow Execution Failures**:
-   - Check for syntax errors in function nodes
-   - Verify file paths and permissions
-   - Check for API rate limits
+4. **Restart All Services**:
+   ```bash
+   docker-compose down
+   docker-compose up -d
+   ```
+
+5. **View Real-time Logs**:
+   ```bash
+   docker-compose logs -f
+   ```
+
+### Resource Issues
+
+If services are running slowly or crashing, check resource usage:
+
+```bash
+docker stats
+```
+
+Consider increasing Docker's memory limit or upgrading server resources.
+
+## Next Steps
+
+After installation:
+
+1. [Configure AI Agents](docs/ai-agents.md)
+2. [Set up Lead Management](docs/workflows/lead-management.md)
+3. [Configure Content Automation](docs/workflows/content-automation.md)
+4. [Set up Financial Operations](docs/workflows/finance-automation.md)
 
 For any specific issues, refer to the official documentation:
 
-- [n8n Documentation](https://docs.n8n.io/)
+- [NocoBase Documentation](https://docs.nocobase.com/)
+- [Activepieces Documentation](https://www.activepieces.com/docs)
+- [Temporal Documentation](https://docs.temporal.io/)
+- [Apache Superset Documentation](https://superset.apache.org/docs)
 - [Metabase Documentation](https://www.metabase.com/docs/latest/)
+- [Grafana Documentation](https://grafana.com/docs/)
 - [PostgreSQL Documentation](https://www.postgresql.org/docs/)
