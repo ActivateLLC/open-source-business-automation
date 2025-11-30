@@ -1,8 +1,391 @@
-version: '3'
+version: '3.8'
+
+# Open Source Business Automation Platform
+# Microservices + Event-Driven Architecture
+# Outperforming traditional monolithic ERP systems
 
 services:
+  # =============================================================================
+  # API GATEWAY LAYER - Unified Entry Point
+  # =============================================================================
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: always
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--log.level=INFO"
+      - "--accesslog=true"
+      - "--metrics.prometheus=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik:/etc/traefik
+      - ./data/traefik/acme:/acme
+    networks:
+      - frontend
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+
+  # =============================================================================
+  # AUTOMATION ORCHESTRATION LAYER
+  # =============================================================================
+  
+  # Activepieces - Primary Workflow Automation (MIT License)
+  activepieces:
+    image: activepieces/activepieces:latest
+    container_name: activepieces
+    restart: always
+    environment:
+      - AP_ENGINE_EXECUTABLE_PATH=dist/packages/engine/main.js
+      - AP_ENVIRONMENT=prod
+      - AP_FRONTEND_URL=http://localhost:8089
+      - AP_WEBHOOK_TIMEOUT_SECONDS=30
+      - AP_TRIGGER_DEFAULT_POLL_INTERVAL=5
+      - AP_POSTGRES_DATABASE=activepieces
+      - AP_POSTGRES_HOST=postgres
+      - AP_POSTGRES_PORT=5432
+      - AP_POSTGRES_USERNAME=automation
+      - AP_POSTGRES_PASSWORD=automation_password
+      - AP_REDIS_HOST=redis
+      - AP_REDIS_PORT=6379
+      - AP_SANDBOX_RUN_TIME_SECONDS=600
+      - AP_TELEMETRY_ENABLED=false
+      - AP_ENCRYPTION_KEY=${AP_ENCRYPTION_KEY:-change_me_32_char_encryption_key}
+      - AP_JWT_SECRET=${AP_JWT_SECRET:-change_me_jwt_secret_key_here}
+    ports:
+      - "8089:80"
+    volumes:
+      - ./data/activepieces:/root/.activepieces
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - backend
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.activepieces.rule=Host(`automation.localhost`)"
+      - "traefik.http.services.activepieces.loadbalancer.server.port=80"
+
+  # Temporal - Long-running Workflow Orchestration (MIT License)
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: temporal
+    restart: always
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=automation
+      - POSTGRES_PWD=automation_password
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig/development.yaml
+    ports:
+      - "7233:7233"  # gRPC
+      - "7234:7234"  # HTTP
+    volumes:
+      - ./config/temporal:/etc/temporal/config/dynamicconfig
+    depends_on:
+      - postgres
+    networks:
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.temporal.rule=Host(`temporal.localhost`)"
+      - "traefik.http.services.temporal.loadbalancer.server.port=7234"
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: temporal-ui
+    restart: always
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:8088
+    ports:
+      - "8088:8080"
+    depends_on:
+      - temporal
+    networks:
+      - backend
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.temporal-ui.rule=Host(`temporal-ui.localhost`)"
+      - "traefik.http.services.temporal-ui.loadbalancer.server.port=8080"
+
+  temporal-admin-tools:
+    image: temporalio/admin-tools:latest
+    container_name: temporal-admin-tools
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      - temporal
+    networks:
+      - backend
+    stdin_open: true
+    tty: true
+
+  # Apache Kafka - Event Streaming (Apache 2.0 License)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    restart: always
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - ./data/zookeeper/data:/var/lib/zookeeper/data
+      - ./data/zookeeper/log:/var/lib/zookeeper/log
+    networks:
+      - backend
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: always
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - ./data/kafka:/var/lib/kafka/data
+    networks:
+      - backend
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: always
+    ports:
+      - "8090:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+    depends_on:
+      - kafka
+    networks:
+      - backend
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kafka-ui.rule=Host(`kafka.localhost`)"
+      - "traefik.http.services.kafka-ui.loadbalancer.server.port=8080"
+
+  # =============================================================================
+  # DATA & STORAGE LAYER
+  # =============================================================================
+  
+  # PostgreSQL - Primary Transactional Database
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=automation
+      - POSTGRES_PASSWORD=automation_password
+      - POSTGRES_DB=automation
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U automation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Qdrant - Vector Database for AI/ML (Apache 2.0 License)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: always
+    ports:
+      - "6333:6333"  # REST API
+      - "6334:6334"  # gRPC
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    networks:
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.qdrant.rule=Host(`qdrant.localhost`)"
+      - "traefik.http.services.qdrant.loadbalancer.server.port=6333"
+
+  # ClickHouse - Analytics Database (Apache 2.0 License)
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    restart: always
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native protocol
+    environment:
+      - CLICKHOUSE_DB=analytics
+      - CLICKHOUSE_USER=analytics
+      - CLICKHOUSE_PASSWORD=analytics_password
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    volumes:
+      - ./data/clickhouse:/var/lib/clickhouse
+      - ./config/clickhouse:/etc/clickhouse-server/config.d
+    networks:
+      - backend
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.clickhouse.rule=Host(`clickhouse.localhost`)"
+      - "traefik.http.services.clickhouse.loadbalancer.server.port=8123"
+
+  # Redis - Cache and Message Broker (BSD License)
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass redis_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # BUSINESS INTELLIGENCE LAYER
+  # =============================================================================
+  
+  # Apache Superset - Primary BI Platform (Apache 2.0 License)
+  superset:
+    image: apache/superset:latest
+    container_name: superset
+    restart: always
+    environment:
+      - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY:-change_me_superset_secret_key}
+      - SUPERSET_LOAD_EXAMPLES=false
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_DB=superset
+      - DATABASE_USER=automation
+      - DATABASE_PASSWORD=automation_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis_password
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./data/superset:/app/superset_home
+      - ./config/superset:/app/pythonpath
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - backend
+      - frontend
+    command: >
+      bash -c "
+        superset fab create-admin --username admin --firstname Admin --lastname User --email admin@example.com --password admin || true &&
+        superset db upgrade &&
+        superset init &&
+        superset run -h 0.0.0.0 -p 8088
+      "
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.superset.rule=Host(`superset.localhost`)"
+      - "traefik.http.services.superset.loadbalancer.server.port=8088"
+
+  # Metabase - Simple Dashboards (AGPL License)
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    restart: always
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_DBNAME=metabase
+      - MB_DB_PORT=5432
+      - MB_DB_USER=automation
+      - MB_DB_PASS=automation_password
+      - MB_DB_HOST=postgres
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/metabase:/metabase-data
+    depends_on:
+      - postgres
+    networks:
+      - backend
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.metabase.rule=Host(`metabase.localhost`)"
+      - "traefik.http.services.metabase.loadbalancer.server.port=3000"
+
+  # Grafana - Real-time Operations Monitoring (AGPL License)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-piechart-panel,grafana-clickhouse-datasource
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - clickhouse
+      - postgres
+    networks:
+      - backend
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.localhost`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # =============================================================================
+  # LEGACY SUPPORT - n8n (for migration purposes)
+  # =============================================================================
   n8n:
     image: docker.n8n.io/n8nio/n8n
+    container_name: n8n
     restart: always
     ports:
       - "5678:5678"
@@ -15,45 +398,39 @@ services:
       - DB_POSTGRESDB_HOST=postgres
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=n8n
-      - DB_POSTGRESDB_USER=n8n
-      - DB_POSTGRESDB_PASSWORD=n8n_password
-      - N8N_ENCRYPTION_KEY=change_me_please_use_strong_encryption_key
+      - DB_POSTGRESDB_USER=automation
+      - DB_POSTGRESDB_PASSWORD=automation_password
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-change_me_please_use_strong_encryption_key}
     volumes:
       - ./data/n8n:/home/node/.n8n
     depends_on:
       - postgres
+      - redis
+    networks:
+      - backend
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`n8n.localhost`)"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
 
-  postgres:
-    image: postgres:14
-    restart: always
-    environment:
-      - POSTGRES_USER=n8n
-      - POSTGRES_PASSWORD=n8n_password
-      - POSTGRES_DB=n8n
-      - POSTGRES_NON_ROOT_USER=n8n
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-  metabase:
-    image: metabase/metabase:latest
-    restart: always
-    ports:
-      - "3000:3000"
-    environment:
-      - MB_DB_TYPE=postgres
-      - MB_DB_DBNAME=metabase
-      - MB_DB_PORT=5432
-      - MB_DB_USER=n8n
-      - MB_DB_PASS=n8n_password
-      - MB_DB_HOST=postgres
-    volumes:
-      - ./data/metabase:/metabase-data
-    depends_on:
-      - postgres
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: false
 
 volumes:
-  n8n_data:
   postgres_data:
+  redis_data:
+  kafka_data:
+  zookeeper_data:
+  qdrant_data:
+  clickhouse_data:
+  superset_data:
   metabase_data:
+  grafana_data:
+  activepieces_data:
+  n8n_data:
+  traefik_data:

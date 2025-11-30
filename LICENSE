@@ -20,11 +20,32 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Note: This repository integrates with several open-source projects, each with its own license:
+================================================================================
+THIRD-PARTY COMPONENT LICENSES
+================================================================================
 
-- n8n: [fair-code licensed](https://n8n.io/fair-code-license/)
-- PostgreSQL: [PostgreSQL License](https://www.postgresql.org/about/licence/)
-- Metabase: [AGPL-3.0 License](https://github.com/metabase/metabase/blob/master/LICENSE.txt)
-- Docker: [Apache License 2.0](https://github.com/docker/docker-ce/blob/master/LICENSE)
+This repository integrates with several open-source projects, each with its own
+license. Users must comply with the respective licenses of these projects:
 
-Users must comply with the respective licenses of these projects when using them.
+Automation Orchestration Layer:
+- Activepieces: MIT License (https://github.com/activepieces/activepieces/blob/main/LICENSE)
+- Temporal: MIT License (https://github.com/temporalio/temporal/blob/main/LICENSE)
+- Apache Kafka: Apache License 2.0 (https://github.com/apache/kafka/blob/trunk/LICENSE)
+
+Data & Storage Layer:
+- PostgreSQL: PostgreSQL License (https://www.postgresql.org/about/licence/)
+- Qdrant: Apache License 2.0 (https://github.com/qdrant/qdrant/blob/master/LICENSE)
+- ClickHouse: Apache License 2.0 (https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE)
+- Redis: BSD 3-Clause License (https://github.com/redis/redis/blob/unstable/COPYING)
+
+Business Intelligence Layer:
+- Apache Superset: Apache License 2.0 (https://github.com/apache/superset/blob/master/LICENSE.txt)
+- Metabase: AGPL-3.0 License (https://github.com/metabase/metabase/blob/master/LICENSE.txt)
+- Grafana: AGPL-3.0 License (https://github.com/grafana/grafana/blob/main/LICENSE)
+
+Infrastructure:
+- Traefik: MIT License (https://github.com/traefik/traefik/blob/master/LICENSE.md)
+- Docker: Apache License 2.0 (https://github.com/docker/docker-ce/blob/master/LICENSE)
+
+Legacy Support:
+- n8n: Sustainable Use License (https://github.com/n8n-io/n8n/blob/master/LICENSE.md)

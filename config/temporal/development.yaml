@@ -1,0 +1,18 @@
+# Temporal Dynamic Configuration
+# Development settings for workflow orchestration
+
+frontend.enableClientVersionCheck:
+  - value: true
+    constraints: {}
+
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}
+
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+
+history.maximumSignalsPerExecution:
+  - value: 10000
+    constraints: {}

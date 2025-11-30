@@ -1,0 +1,24 @@
+# ClickHouse custom configuration
+# Analytics database settings
+
+<profiles>
+    <default>
+        <max_memory_usage>10000000000</max_memory_usage>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+        <load_balancing>random</load_balancing>
+        <max_query_size>1073741824</max_query_size>
+        <max_execution_time>120</max_execution_time>
+    </default>
+</profiles>
+
+<users>
+    <analytics>
+        <password>analytics_password</password>
+        <networks>
+            <ip>::/0</ip>
+        </networks>
+        <profile>default</profile>
+        <quota>default</quota>
+        <access_management>1</access_management>
+    </analytics>
+</users>

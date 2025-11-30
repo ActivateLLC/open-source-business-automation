@@ -1,0 +1,34 @@
+apiVersion: 1
+
+datasources:
+  - name: PostgreSQL
+    type: postgres
+    url: postgres:5432
+    database: automation
+    user: automation
+    secureJsonData:
+      password: automation_password
+    jsonData:
+      sslmode: disable
+      maxOpenConns: 10
+      maxIdleConns: 5
+      connMaxLifetime: 14400
+    isDefault: false
+    editable: true
+
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    url: http://clickhouse:8123
+    jsonData:
+      defaultDatabase: analytics
+      username: analytics
+    secureJsonData:
+      password: analytics_password
+    isDefault: true
+    editable: true
+
+  - name: Prometheus
+    type: prometheus
+    url: http://traefik:8080/metrics
+    isDefault: false
+    editable: true
