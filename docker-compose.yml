@@ -96,9 +96,10 @@ services:
       - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
       - KAFKA_LOG_DIRS=/tmp/kraft-combined-logs
-      # Generate a unique cluster ID for your deployment using: 
+      # IMPORTANT: Generate a unique cluster ID for production deployments using: 
       # docker run --rm apache/kafka:latest /opt/kafka/bin/kafka-storage.sh random-uuid
-      - CLUSTER_ID=${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+      # Then set the KAFKA_CLUSTER_ID environment variable before starting
+      - CLUSTER_ID=${KAFKA_CLUSTER_ID:-REPLACE_WITH_UNIQUE_CLUSTER_ID}
     volumes:
       - kafka_data:/tmp/kraft-combined-logs
 

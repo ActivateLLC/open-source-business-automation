@@ -200,7 +200,7 @@ fi
 # Backup configuration files
 echo "Backing up configuration files..." | tee -a "$LOG_FILE"
 cp docker-compose.yml "$BACKUP_DIR/" 2>> "$LOG_FILE" || true
-cp -r data/ai_agents/config.yaml "$BACKUP_DIR/" 2>> "$LOG_FILE" || true
+cp data/ai_agents/config.yaml "$BACKUP_DIR/" 2>> "$LOG_FILE" || true
 
 # Backup data directories (compressed)
 echo "Backing up data directories..." | tee -a "$LOG_FILE"

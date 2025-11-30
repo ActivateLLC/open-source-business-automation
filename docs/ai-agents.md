@@ -209,12 +209,18 @@ INSERT INTO knowledge_base (category, title, content, metadata) VALUES
 Create embeddings for your knowledge base entries:
 
 ```python
+import os
 from langchain.embeddings import OpenAIEmbeddings
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
 
+# Ensure API key is set via environment variable
+# Export before running: export OPENAI_API_KEY=your_api_key
+if not os.getenv("OPENAI_API_KEY"):
+    raise ValueError("OPENAI_API_KEY environment variable must be set")
+
 # Initialize clients
-embeddings = OpenAIEmbeddings()
+embeddings = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
 qdrant = QdrantClient(host="localhost", port=6333)
 
 # Create collection
