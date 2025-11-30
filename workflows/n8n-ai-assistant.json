@@ -1,0 +1,511 @@
+{
+  "name": "AI Business Assistant - Lead & Customer Q&A",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-assistant",
+        "options": {}
+      },
+      "id": "assistant-webhook-001",
+      "name": "AI Assistant Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and validate the incoming question\nconst request = $input.item.json;\nconst now = new Date();\nconst sessionId = request.session_id || `session-${Date.now()}`;\n\n// Structure the request\nconst assistantRequest = {\n  request_id: `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,\n  session_id: sessionId,\n  user_id: request.user_id || 'anonymous',\n  question: request.question || request.message || '',\n  context: request.context || {},\n  requested_at: now.toISOString()\n};\n\n// Classify the question type\nconst questionLower = assistantRequest.question.toLowerCase();\nlet questionType = 'general';\nlet entityType = null;\n\nif (questionLower.includes('lead') || questionLower.includes('prospect')) {\n  questionType = 'leads';\n  entityType = 'lead';\n} else if (questionLower.includes('customer') || questionLower.includes('client')) {\n  questionType = 'customers';\n  entityType = 'customer';\n} else if (questionLower.includes('invoice') || questionLower.includes('payment') || questionLower.includes('bill')) {\n  questionType = 'finance';\n  entityType = 'invoice';\n} else if (questionLower.includes('content') || questionLower.includes('article') || questionLower.includes('post')) {\n  questionType = 'content';\n  entityType = 'content';\n} else if (questionLower.includes('dashboard') || questionLower.includes('metrics') || questionLower.includes('report')) {\n  questionType = 'analytics';\n  entityType = 'metrics';\n}\n\nassistantRequest.question_type = questionType;\nassistantRequest.entity_type = entityType;\n\n// Create Kafka event for question received\nassistantRequest.kafka_event = {\n  event_id: assistantRequest.request_id,\n  event_type: 'ai.question.received',\n  event_source: 'n8n-ai-assistant',\n  entity_type: 'ai_conversation',\n  entity_id: sessionId,\n  action: 'query',\n  timestamp: now.toISOString(),\n  data: {\n    question_type: questionType,\n    user_id: assistantRequest.user_id\n  }\n};\n\nreturn { json: assistantRequest };"
+      },
+      "id": "question-process-001",
+      "name": "Process Question",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "topic": "business-events.ai-assistant",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-question-001",
+      "name": "Kafka Question Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.question_type}}",
+              "operation": "equal",
+              "value2": "leads"
+            }
+          ]
+        }
+      },
+      "id": "type-switch-001",
+      "name": "Route By Question Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  l.*,\n  (SELECT COUNT(*) FROM leads) as total_leads,\n  (SELECT COUNT(*) FROM leads WHERE tier = 'hot') as hot_leads,\n  (SELECT COUNT(*) FROM leads WHERE tier = 'warm') as warm_leads,\n  (SELECT COUNT(*) FROM leads WHERE tier = 'cold') as cold_leads,\n  (SELECT AVG(score) FROM leads) as avg_score,\n  (SELECT AVG(ai_score) FROM leads) as avg_ai_score\nFROM leads l\nORDER BY l.created_at DESC\nLIMIT 10;",
+        "additionalFields": {}
+      },
+      "id": "db-leads-001",
+      "name": "Get Lead Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [1120, 100],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  c.*,\n  (SELECT COUNT(*) FROM customers) as total_customers,\n  (SELECT SUM(lifetime_value) FROM customers) as total_ltv,\n  (SELECT AVG(lifetime_value) FROM customers) as avg_ltv,\n  (SELECT COUNT(*) FROM customers WHERE status = 'active') as active_customers\nFROM customers c\nORDER BY c.created_at DESC\nLIMIT 10;",
+        "additionalFields": {}
+      },
+      "id": "db-customers-001",
+      "name": "Get Customer Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [1120, 250],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  i.*,\n  (SELECT COUNT(*) FROM invoices) as total_invoices,\n  (SELECT SUM(total_amount) FROM invoices) as total_amount,\n  (SELECT SUM(paid_amount) FROM invoices) as total_paid,\n  (SELECT COUNT(*) FROM invoices WHERE payment_status = 'unpaid' AND due_date < CURRENT_DATE) as overdue_count\nFROM invoices i\nORDER BY i.created_at DESC\nLIMIT 10;",
+        "additionalFields": {}
+      },
+      "id": "db-finance-001",
+      "name": "Get Finance Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [1120, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  ci.*,\n  (SELECT COUNT(*) FROM content_items) as total_content,\n  (SELECT COUNT(*) FROM content_items WHERE status = 'published') as published_count,\n  (SELECT COUNT(*) FROM content_items WHERE ai_generated = true) as ai_generated_count,\n  (SELECT AVG(views) FROM content_items WHERE views > 0) as avg_views\nFROM content_items ci\nORDER BY ci.created_at DESC\nLIMIT 10;",
+        "additionalFields": {}
+      },
+      "id": "db-content-001",
+      "name": "Get Content Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [1120, 550],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare context from leads data for AI\nconst request = $node['Process Question'].json;\nconst leadsData = $input.all();\n\nlet contextSummary = 'LEAD DATABASE SUMMARY:\\n';\n\nif (leadsData.length > 0) {\n  const firstRow = leadsData[0].json;\n  contextSummary += `- Total Leads: ${firstRow.total_leads || 0}\\n`;\n  contextSummary += `- Hot Leads: ${firstRow.hot_leads || 0}\\n`;\n  contextSummary += `- Warm Leads: ${firstRow.warm_leads || 0}\\n`;\n  contextSummary += `- Cold Leads: ${firstRow.cold_leads || 0}\\n`;\n  contextSummary += `- Average Score: ${parseFloat(firstRow.avg_score || 0).toFixed(1)}\\n`;\n  contextSummary += `- Average AI Score: ${parseFloat(firstRow.avg_ai_score || 0).toFixed(1)}\\n\\n`;\n  \n  contextSummary += 'RECENT LEADS:\\n';\n  leadsData.slice(0, 5).forEach((lead, i) => {\n    const l = lead.json;\n    contextSummary += `${i+1}. ${l.name || 'Unknown'} (${l.email || 'no email'}) - ${l.company || 'Unknown company'} - Tier: ${l.tier || 'unknown'}, Score: ${l.score || 0}\\n`;\n  });\n}\n\nreturn {\n  json: {\n    request,\n    context_type: 'leads',\n    context_summary: contextSummary,\n    raw_data: leadsData.map(l => l.json)\n  }\n};"
+      },
+      "id": "lead-context-001",
+      "name": "Prepare Lead Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1340, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare context from customer data for AI\nconst request = $node['Process Question'].json;\nconst customersData = $input.all();\n\nlet contextSummary = 'CUSTOMER DATABASE SUMMARY:\\n';\n\nif (customersData.length > 0) {\n  const firstRow = customersData[0].json;\n  contextSummary += `- Total Customers: ${firstRow.total_customers || 0}\\n`;\n  contextSummary += `- Active Customers: ${firstRow.active_customers || 0}\\n`;\n  contextSummary += `- Total Lifetime Value: $${parseFloat(firstRow.total_ltv || 0).toFixed(2)}\\n`;\n  contextSummary += `- Average LTV: $${parseFloat(firstRow.avg_ltv || 0).toFixed(2)}\\n\\n`;\n  \n  contextSummary += 'RECENT CUSTOMERS:\\n';\n  customersData.slice(0, 5).forEach((customer, i) => {\n    const c = customer.json;\n    contextSummary += `${i+1}. ${c.name || 'Unknown'} (${c.email || 'no email'}) - ${c.company || 'Unknown company'} - Status: ${c.status || 'unknown'}, LTV: $${parseFloat(c.lifetime_value || 0).toFixed(2)}\\n`;\n  });\n}\n\nreturn {\n  json: {\n    request,\n    context_type: 'customers',\n    context_summary: contextSummary,\n    raw_data: customersData.map(c => c.json)\n  }\n};"
+      },
+      "id": "customer-context-001",
+      "name": "Prepare Customer Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1340, 250]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare context from finance data for AI\nconst request = $node['Process Question'].json;\nconst financeData = $input.all();\n\nlet contextSummary = 'FINANCIAL DATABASE SUMMARY:\\n';\n\nif (financeData.length > 0) {\n  const firstRow = financeData[0].json;\n  contextSummary += `- Total Invoices: ${firstRow.total_invoices || 0}\\n`;\n  contextSummary += `- Total Invoice Amount: $${parseFloat(firstRow.total_amount || 0).toFixed(2)}\\n`;\n  contextSummary += `- Total Paid: $${parseFloat(firstRow.total_paid || 0).toFixed(2)}\\n`;\n  contextSummary += `- Outstanding: $${(parseFloat(firstRow.total_amount || 0) - parseFloat(firstRow.total_paid || 0)).toFixed(2)}\\n`;\n  contextSummary += `- Overdue Invoices: ${firstRow.overdue_count || 0}\\n\\n`;\n  \n  contextSummary += 'RECENT INVOICES:\\n';\n  financeData.slice(0, 5).forEach((invoice, i) => {\n    const inv = invoice.json;\n    contextSummary += `${i+1}. ${inv.invoice_number || 'Unknown'} - ${inv.vendor || 'Unknown'} - Amount: $${parseFloat(inv.total_amount || 0).toFixed(2)}, Status: ${inv.payment_status || 'unknown'}\\n`;\n  });\n}\n\nreturn {\n  json: {\n    request,\n    context_type: 'finance',\n    context_summary: contextSummary,\n    raw_data: financeData.map(f => f.json)\n  }\n};"
+      },
+      "id": "finance-context-001",
+      "name": "Prepare Finance Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare context from content data for AI\nconst request = $node['Process Question'].json;\nconst contentData = $input.all();\n\nlet contextSummary = 'CONTENT DATABASE SUMMARY:\\n';\n\nif (contentData.length > 0) {\n  const firstRow = contentData[0].json;\n  contextSummary += `- Total Content Items: ${firstRow.total_content || 0}\\n`;\n  contextSummary += `- Published: ${firstRow.published_count || 0}\\n`;\n  contextSummary += `- AI Generated: ${firstRow.ai_generated_count || 0}\\n`;\n  contextSummary += `- Average Views: ${parseFloat(firstRow.avg_views || 0).toFixed(0)}\\n\\n`;\n  \n  contextSummary += 'RECENT CONTENT:\\n';\n  contentData.slice(0, 5).forEach((content, i) => {\n    const c = content.json;\n    contextSummary += `${i+1}. \"${c.title || 'Untitled'}\" - Type: ${c.content_type || 'unknown'}, Status: ${c.status || 'unknown'}, AI: ${c.ai_generated ? 'Yes' : 'No'}\\n`;\n  });\n}\n\nreturn {\n  json: {\n    request,\n    context_type: 'content',\n    context_summary: contextSummary,\n    raw_data: contentData.map(c => c.json)\n  }\n};"
+      },
+      "id": "content-context-001",
+      "name": "Prepare Content Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1340, 550]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare general context for analytics/general questions\nconst request = $node['Process Question'].json;\n\nlet contextSummary = 'GENERAL BUSINESS CONTEXT:\\n';\ncontextSummary += 'This is a business automation system that tracks:\\n';\ncontextSummary += '- Leads (prospective customers with AI-powered scoring)\\n';\ncontextSummary += '- Customers (converted leads with lifetime value tracking)\\n';\ncontextSummary += '- Invoices and Payments (financial tracking)\\n';\ncontextSummary += '- Content (AI-generated and manual content)\\n\\n';\ncontextSummary += 'You can ask specific questions about any of these areas.';\n\nreturn {\n  json: {\n    request,\n    context_type: 'general',\n    context_summary: contextSummary,\n    raw_data: []\n  }\n};"
+      },
+      "id": "general-context-001",
+      "name": "Prepare General Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1340, 700]
+    },
+    {
+      "parameters": {},
+      "id": "merge-context-001",
+      "name": "Merge All Contexts",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama2\",\n  \"prompt\": \"You are a helpful business assistant AI. You have access to the following business data:\\n\\n{{$json.context_summary}}\\n\\nUser Question: {{$json.request.question}}\\n\\nProvide a helpful, accurate, and concise answer based on the data provided. If you don't have enough information to answer, say so clearly. Format your response in a clear, professional manner.\",\n  \"stream\": false,\n  \"options\": {\n    \"temperature\": 0.7,\n    \"num_predict\": 500\n  }\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "ai-answer-001",
+      "name": "AI Generate Answer (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI response and create final answer\nconst contextData = $node['Merge All Contexts'].json;\nconst ollamaResponse = $input.item.json;\nconst now = new Date();\n\n// Extract answer from Ollama response\nlet answer = ollamaResponse.response || 'I apologize, but I was unable to generate a response. Please try rephrasing your question.';\n\n// Clean up the answer\nanswer = answer.trim();\n\n// Create response object\nconst response = {\n  request_id: contextData.request.request_id,\n  session_id: contextData.request.session_id,\n  question: contextData.request.question,\n  question_type: contextData.request.question_type,\n  answer: answer,\n  context_used: contextData.context_type,\n  confidence: ollamaResponse.eval_count ? 'high' : 'medium',\n  responded_at: now.toISOString(),\n  processing_time_ms: now.getTime() - new Date(contextData.request.requested_at).getTime()\n};\n\n// Create Kafka event for response\nconst kafkaEvent = {\n  event_id: `answer-${contextData.request.request_id}`,\n  event_type: 'ai.answer.generated',\n  event_source: 'n8n-ai-assistant',\n  entity_type: 'ai_conversation',\n  entity_id: contextData.request.session_id,\n  action: 'respond',\n  timestamp: now.toISOString(),\n  data: {\n    question_type: response.question_type,\n    context_used: response.context_used,\n    processing_time_ms: response.processing_time_ms\n  }\n};\n\nreturn {\n  json: {\n    response,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "answer-process-001",
+      "name": "Process AI Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [2000, 400]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "ai_messages",
+        "columns": "conversation_id, role, content, context",
+        "additionalFields": {}
+      },
+      "id": "db-save-message-001",
+      "name": "Save Conversation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [2220, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topic": "business-events.ai-assistant",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-answer-001",
+      "name": "Kafka Answer Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [2440, 400],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.response) }}",
+        "options": {}
+      },
+      "id": "respond-001",
+      "name": "Respond to User",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2660, 400]
+    }
+  ],
+  "connections": {
+    "AI Assistant Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Question": {
+      "main": [
+        [
+          {
+            "node": "Kafka Question Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kafka Question Event": {
+      "main": [
+        [
+          {
+            "node": "Route By Question Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Question Type": {
+      "main": [
+        [
+          {
+            "node": "Get Lead Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Customer Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Finance Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Content Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare General Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Lead Context": {
+      "main": [
+        [
+          {
+            "node": "Prepare Lead Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Customer Context": {
+      "main": [
+        [
+          {
+            "node": "Prepare Customer Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Finance Context": {
+      "main": [
+        [
+          {
+            "node": "Prepare Finance Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Content Context": {
+      "main": [
+        [
+          {
+            "node": "Prepare Content Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Lead Context": {
+      "main": [
+        [
+          {
+            "node": "Merge All Contexts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Customer Context": {
+      "main": [
+        [
+          {
+            "node": "Merge All Contexts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Finance Context": {
+      "main": [
+        [
+          {
+            "node": "Merge All Contexts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Content Context": {
+      "main": [
+        [
+          {
+            "node": "Merge All Contexts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare General Context": {
+      "main": [
+        [
+          {
+            "node": "Merge All Contexts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge All Contexts": {
+      "main": [
+        [
+          {
+            "node": "AI Generate Answer (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Generate Answer (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Process AI Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AI Answer": {
+      "main": [
+        [
+          {
+            "node": "Save Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Conversation": {
+      "main": [
+        [
+          {
+            "node": "Kafka Answer Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kafka Answer Event": {
+      "main": [
+        [
+          {
+            "node": "Respond to User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

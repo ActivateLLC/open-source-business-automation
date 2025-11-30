@@ -4,11 +4,12 @@ This guide provides step-by-step instructions for setting up the Open Source Bus
 
 ## Prerequisites
 
-- A Linux server with at least 4GB RAM and 2 CPU cores
+- A Linux server with at least 8GB RAM and 4 CPU cores (16GB RAM recommended for AI features)
 - Docker and Docker Compose installed
-- 20GB+ of storage space
+- 50GB+ of storage space (SSD recommended)
 - Internet connectivity for the server
 - Basic command line knowledge
+- Optional: NVIDIA GPU with 8GB+ VRAM for accelerated AI
 
 ## Installation Steps
 
@@ -61,17 +62,21 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-This script will create the necessary directory structure and template files.
+This script will create the necessary directory structure, template files, and environment configuration.
 
 ### 4. Configure the Environment
 
-1. Edit the `docker-compose.yml` file to change default passwords and other settings:
+1. Edit the `.env` file to change default passwords and settings:
 
 ```bash
-nano docker-compose.yml
+nano .env
 ```
 
-2. Make sure to change the `N8N_ENCRYPTION_KEY` to a strong, random string.
+2. Update the following critical settings:
+   - `POSTGRES_PASSWORD` - Strong database password
+   - `N8N_ENCRYPTION_KEY` - Strong encryption key for n8n
+   - `NOCOBASE_APP_KEY` - Strong app key for NocoBase
+   - `NOCOBASE_ADMIN_PASSWORD` - Admin password for NocoBase
 
 ### 5. Start the Services
 
@@ -79,12 +84,55 @@ nano docker-compose.yml
 docker-compose up -d
 ```
 
-### 6. Access the Platforms
+This will start all platform components:
+- NocoBase (Unified Frontend)
+- n8n (Workflow Automation)
+- PostgreSQL (Database)
+- Apache Kafka & Zookeeper (Event Streaming)
+- Kafka UI (Kafka Management)
+- Metabase (Dashboards)
+- Ollama (AI/LLM)
+- Redis (Caching)
 
-- n8n: `http://your-server-ip:5678`
-- Metabase: `http://your-server-ip:3000`
+### 6. Wait for Initialization
 
-### 7. Import the Workflows
+The services need 2-3 minutes to fully initialize. You can monitor the startup:
+
+```bash
+docker-compose logs -f
+```
+
+### 7. Access the Platforms
+
+| Platform | URL | Purpose |
+|----------|-----|---------|
+| NocoBase | http://your-server-ip:13000 | Unified frontend & admin |
+| n8n | http://your-server-ip:5678 | Workflow automation |
+| Metabase | http://your-server-ip:3000 | Dashboards & BI |
+| Kafka UI | http://your-server-ip:8080 | Event log viewer |
+
+### 8. Set Up AI Model (Optional but Recommended)
+
+To enable AI-powered features (lead scoring, content generation, AI assistant):
+
+```bash
+# Pull the Llama2 model (about 4GB download)
+docker exec -it open-source-business-automation_ollama_1 ollama pull llama2
+```
+
+For GPU acceleration (NVIDIA), ensure you have the NVIDIA Container Toolkit installed:
+
+```bash
+# Install NVIDIA Container Toolkit
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+```
+
+### 9. Import the Workflows
 
 1. Log in to n8n at `http://your-server-ip:5678`
 
@@ -96,47 +144,66 @@ docker-compose up -d
    - Click "Import"
    - Save the workflow
 
-4. Verify that all three workflows are imported:
-   - Lead Management System (Free/Open Source)
-   - Content Generation & Distribution Workflow
-   - Financial Operations Automation
+4. Import these workflows:
+   - `n8n-ai-lead-processing.json` - AI lead scoring and routing
+   - `n8n-ai-content-distribution.json` - AI content generation
+   - `n8n-automated-invoicing.json` - Invoice and payment tracking
+   - `n8n-ai-assistant.json` - AI business assistant
+   - `n8n-kafka-audit-trail.json` - Kafka event consumer
 
-### 8. Set Up Metabase
+5. Configure credentials in n8n:
+   - PostgreSQL connection
+   - Kafka connection
+
+### 10. Set Up NocoBase
+
+1. Access NocoBase at `http://your-server-ip:13000`
+
+2. Log in with the admin credentials from your `.env` file
+
+3. Create collections for:
+   - Leads
+   - Customers
+   - Invoices
+   - Content
+
+4. Configure the dashboard views
+
+### 11. Set Up Metabase Dashboards
 
 1. Access Metabase in your browser at `http://your-server-ip:3000`
 
 2. Follow the setup wizard to create your admin account
 
-3. When prompted for database connection, choose to connect to the PostgreSQL database:
+3. When prompted for database connection, choose PostgreSQL:
    - Host: postgres
    - Port: 5432
    - Database: n8n
    - Username: n8n
-   - Password: n8n_password
+   - Password: (your configured password)
+
+4. Create dashboards using the pre-defined views:
+   - `v_lead_pipeline` - Lead pipeline metrics
+   - `v_invoice_summary` - Financial overview
+   - `v_content_performance` - Content analytics
+   - `v_daily_activity` - Activity audit
 
 ## Security Considerations
 
-For production use, consider implementing these security measures:
+For production use, implement these security measures:
 
-1. **Enable HTTPS**:
-   - Use a reverse proxy like Nginx with Let's Encrypt certificates
-   - Update the n8n environment variables to use HTTPS
+### Enable HTTPS
 
-2. **Password Protection**:
-   - Enable n8n authentication by setting `N8N_BASIC_AUTH_ACTIVE=true`
-   - Set username and password with `N8N_BASIC_AUTH_USER` and `N8N_BASIC_AUTH_PASSWORD`
+Use a reverse proxy like Nginx with Let's Encrypt certificates:
 
-3. **Firewall Configuration**:
-   - Restrict access to your server using a firewall (UFW or iptables)
-   - Only expose necessary ports (80/443 for web, 22 for SSH)
-
-4. **Regular Backups**:
-   - Implement automated backups of the data directory
-   - Test restoration procedures regularly
-
-Example Nginx configuration for HTTPS:
-
+```bash
+sudo apt-get install -y nginx certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.com
 ```
+
+Example Nginx configuration:
+
+```nginx
 server {
     listen 80;
     server_name your-domain.com;
@@ -154,8 +221,27 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
 
+    # NocoBase
     location / {
-        proxy_pass http://localhost:5678;
+        proxy_pass http://localhost:13000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # n8n
+    location /n8n/ {
+        proxy_pass http://localhost:5678/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Metabase
+    location /metabase/ {
+        proxy_pass http://localhost:3000/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -164,32 +250,81 @@ server {
 }
 ```
 
+### Enable n8n Authentication
+
+Add these environment variables to `docker-compose.yml`:
+
+```yaml
+n8n:
+  environment:
+    - N8N_BASIC_AUTH_ACTIVE=true
+    - N8N_BASIC_AUTH_USER=admin
+    - N8N_BASIC_AUTH_PASSWORD=use_a_strong_password_here
+```
+
+### Firewall Configuration
+
+```bash
+# For Ubuntu/Debian with UFW
+sudo ufw allow ssh
+sudo ufw allow http
+sudo ufw allow https
+sudo ufw deny 5678    # Block direct n8n access
+sudo ufw deny 5432    # Block direct PostgreSQL access
+sudo ufw deny 9092    # Block direct Kafka access
+sudo ufw enable
+```
+
 ## Troubleshooting
 
 ### Common Issues
 
-1. **n8n Not Starting**:
-   - Check logs: `docker-compose logs n8n`
-   - Verify PostgreSQL connection
-   - Ensure proper volume permissions
+1. **Services Not Starting**:
+   - Check logs: `docker-compose logs <service_name>`
+   - Verify port availability: `netstat -tulpn | grep <port>`
+   - Check disk space: `df -h`
 
-2. **Webhook Connection Issues**:
-   - Verify network/firewall settings
-   - Check webhook URL formatting
-   - Test with curl commands
+2. **Kafka Connection Issues**:
+   - Ensure Zookeeper is running: `docker-compose logs zookeeper`
+   - Check Kafka logs: `docker-compose logs kafka`
+   - Verify network connectivity between containers
 
-3. **Database Connection Problems**:
+3. **AI Features Not Working**:
+   - Verify Ollama is running: `docker-compose logs ollama`
+   - Check if model is downloaded: `docker exec -it <ollama_container> ollama list`
+   - Check GPU availability: `nvidia-smi`
+
+4. **Database Connection Problems**:
    - Check PostgreSQL logs: `docker-compose logs postgres`
    - Verify credentials match across services
-   - Check database availability
+   - Test connection: `docker-compose exec postgres psql -U n8n`
 
-4. **Workflow Execution Failures**:
-   - Check for syntax errors in function nodes
-   - Verify file paths and permissions
-   - Check for API rate limits
+5. **Webhook Not Responding**:
+   - Verify n8n workflow is active
+   - Check n8n logs for errors
+   - Test endpoint: `curl -X POST http://localhost:5678/webhook/lead-capture -H "Content-Type: application/json" -d '{"test": true}'`
 
-For any specific issues, refer to the official documentation:
+### Reset and Restart
+
+To reset all services:
+
+```bash
+# Stop all services
+docker-compose down
+
+# Remove volumes (WARNING: deletes all data)
+docker-compose down -v
+
+# Restart fresh
+./setup.sh
+docker-compose up -d
+```
+
+## Additional Resources
 
 - [n8n Documentation](https://docs.n8n.io/)
+- [NocoBase Documentation](https://docs.nocobase.com/)
 - [Metabase Documentation](https://www.metabase.com/docs/latest/)
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
+- [Ollama Documentation](https://github.com/ollama/ollama)
 - [PostgreSQL Documentation](https://www.postgresql.org/docs/)

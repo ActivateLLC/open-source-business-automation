@@ -1,6 +1,31 @@
 version: '3'
 
 services:
+  # NocoBase - Unified Low-Code Platform Frontend
+  nocobase:
+    image: nocobase/nocobase:latest
+    restart: always
+    ports:
+      - "13000:80"
+    environment:
+      - APP_ENV=production
+      - APP_KEY=change_me_please_use_strong_app_key
+      - DB_DIALECT=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=nocobase
+      - DB_USER=n8n
+      - DB_PASSWORD=n8n_password
+      - INIT_ROOT_EMAIL=admin@example.com
+      - INIT_ROOT_PASSWORD=admin123
+      - INIT_ROOT_NICKNAME=Admin
+    volumes:
+      - ./data/nocobase/storage:/app/nocobase/storage
+    depends_on:
+      - postgres
+      - kafka
+
+  # n8n - Workflow Automation Engine
   n8n:
     image: docker.n8n.io/n8nio/n8n
     restart: always
@@ -18,11 +43,16 @@ services:
       - DB_POSTGRESDB_USER=n8n
       - DB_POSTGRESDB_PASSWORD=n8n_password
       - N8N_ENCRYPTION_KEY=change_me_please_use_strong_encryption_key
+      - KAFKA_BROKER=kafka:9092
+      - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ./data/n8n:/home/node/.n8n
     depends_on:
       - postgres
+      - kafka
+      - ollama
 
+  # PostgreSQL - Primary Database
   postgres:
     image: postgres:14
     restart: always
@@ -33,9 +63,11 @@ services:
       - POSTGRES_NON_ROOT_USER=n8n
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
       - "5432:5432"
 
+  # Metabase - Real-Time Dashboards & BI
   metabase:
     image: metabase/metabase:latest
     restart: always
@@ -53,7 +85,84 @@ services:
     depends_on:
       - postgres
 
+  # Zookeeper - Required for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    restart: always
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_TICK_TIME=2000
+    volumes:
+      - ./data/zookeeper/data:/var/lib/zookeeper/data
+      - ./data/zookeeper/log:/var/lib/zookeeper/log
+    ports:
+      - "2181:2181"
+
+  # Apache Kafka - Event Streaming & Audit Trail
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    restart: always
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+    volumes:
+      - ./data/kafka:/var/lib/kafka/data
+    depends_on:
+      - zookeeper
+
+  # Kafka UI - Web Interface for Kafka Management
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+    depends_on:
+      - kafka
+
+  # Ollama - Local AI/LLM for Lead Scoring, Content Generation & AI Assistant
+  ollama:
+    image: ollama/ollama:latest
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Redis - Caching and Real-Time Updates
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes
+
 volumes:
   n8n_data:
   postgres_data:
   metabase_data:
+  nocobase_data:
+  zookeeper_data:
+  kafka_data:
+  ollama_data:
+  redis_data:

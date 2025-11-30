@@ -1,0 +1,577 @@
+{
+  "name": "AI Content Generation & Auto-Distribution",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "weekly",
+              "dayOfWeek": 1,
+              "hour": 9
+            }
+          ]
+        }
+      },
+      "id": "content-cron-001",
+      "name": "Weekly Content Planning",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "content-request",
+        "options": {}
+      },
+      "id": "content-webhook-001",
+      "name": "Content Request Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate content topics based on business needs\nconst now = new Date();\nconst weekNumber = Math.ceil((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));\n\n// Define content topics for different business areas\nconst contentTopics = [\n  {\n    topic: 'Lead Generation Best Practices',\n    content_type: 'blog',\n    target_audience: 'marketing_professionals',\n    keywords: ['lead generation', 'marketing automation', 'B2B leads'],\n    target_platforms: ['blog', 'linkedin', 'twitter']\n  },\n  {\n    topic: 'AI in Business Automation',\n    content_type: 'article',\n    target_audience: 'business_leaders',\n    keywords: ['AI', 'automation', 'digital transformation'],\n    target_platforms: ['blog', 'linkedin']\n  },\n  {\n    topic: 'Invoice Management Tips',\n    content_type: 'how-to',\n    target_audience: 'finance_teams',\n    keywords: ['invoicing', 'payment tracking', 'accounts receivable'],\n    target_platforms: ['blog', 'email']\n  },\n  {\n    topic: 'Open Source Business Tools',\n    content_type: 'listicle',\n    target_audience: 'it_professionals',\n    keywords: ['open source', 'business software', 'cost savings'],\n    target_platforms: ['blog', 'twitter', 'reddit']\n  }\n];\n\n// Select topic for this week\nconst topicIndex = weekNumber % contentTopics.length;\nconst selectedTopic = contentTopics[topicIndex];\n\n// Add metadata\nselectedTopic.request_id = `content-${now.getTime()}`;\nselectedTopic.week_number = weekNumber;\nselectedTopic.requested_at = now.toISOString();\nselectedTopic.scheduled_publish_at = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString();\n\nreturn { json: selectedTopic };"
+      },
+      "id": "topic-gen-001",
+      "name": "Generate Content Topic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process webhook content request\nconst request = $input.item.json;\nconst now = new Date();\n\n// Validate and standardize the request\nconst contentRequest = {\n  request_id: `content-${now.getTime()}`,\n  topic: request.topic || 'Business Automation Tips',\n  content_type: request.content_type || 'article',\n  target_audience: request.target_audience || 'general',\n  keywords: request.keywords || ['business', 'automation'],\n  target_platforms: request.target_platforms || ['blog'],\n  tone: request.tone || 'professional',\n  word_count: request.word_count || 800,\n  requested_at: now.toISOString(),\n  scheduled_publish_at: request.scheduled_publish_at || new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()\n};\n\nreturn { json: contentRequest };"
+      },
+      "id": "webhook-process-001",
+      "name": "Process Content Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [460, 500]
+    },
+    {
+      "parameters": {},
+      "id": "merge-requests-001",
+      "name": "Merge Content Requests",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama2\",\n  \"prompt\": \"You are a professional content writer. Create a high-quality {{$json.content_type}} about '{{$json.topic}}' for {{$json.target_audience}}.\\n\\nGuidelines:\\n- Tone: Professional and engaging\\n- Target length: 800 words\\n- Keywords to include: {{$json.keywords.join(', ')}}\\n- Include actionable insights\\n- Format with proper headings and sections\\n\\nWrite the complete article in markdown format with a compelling title, introduction, main sections, and conclusion.\",\n  \"stream\": false,\n  \"options\": {\n    \"temperature\": 0.7,\n    \"num_predict\": 2000\n  }\n}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "ai-generate-001",
+      "name": "AI Content Generation (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and structure AI-generated content\nconst request = $node['Merge Content Requests'].json;\nconst ollamaResponse = $input.item.json;\nconst now = new Date();\n\n// Extract content from Ollama response\nlet content = ollamaResponse.response || 'Content generation failed. Please try again.';\n\n// Extract title from content (assumes first line is title)\nlet title = request.topic;\nconst titleMatch = content.match(/^#\\s+(.+)$/m);\nif (titleMatch) {\n  title = titleMatch[1];\n}\n\n// Create structured content item\nconst contentItem = {\n  id: request.request_id,\n  title: title,\n  content_type: request.content_type,\n  topic: request.topic,\n  body: content,\n  ai_generated: true,\n  ai_model: 'llama2',\n  keywords: request.keywords,\n  target_audience: request.target_audience,\n  target_platforms: request.target_platforms,\n  status: 'draft',\n  word_count: content.split(/\\s+/).length,\n  scheduled_publish_at: request.scheduled_publish_at,\n  created_at: now.toISOString(),\n  updated_at: now.toISOString()\n};\n\n// Create Kafka event\nconst kafkaEvent = {\n  event_id: `content-gen-${now.getTime()}`,\n  event_type: 'content.generated',\n  event_source: 'n8n-content-generator',\n  entity_type: 'content',\n  entity_id: contentItem.id,\n  action: 'create',\n  timestamp: now.toISOString(),\n  data: {\n    title: contentItem.title,\n    content_type: contentItem.content_type,\n    ai_generated: true,\n    word_count: contentItem.word_count,\n    target_platforms: contentItem.target_platforms\n  }\n};\n\nreturn {\n  json: {\n    content: contentItem,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "content-process-001",
+      "name": "Process Generated Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "content_items",
+        "columns": "title, content_type, topic, status, body, ai_generated, ai_model, keywords, target_platforms, scheduled_publish_at",
+        "additionalFields": {}
+      },
+      "id": "db-content-001",
+      "name": "Save Content to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [1340, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topic": "business-events.content",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-content-001",
+      "name": "Kafka Content Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [1560, 400],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyHour"
+            }
+          ]
+        }
+      },
+      "id": "dist-cron-001",
+      "name": "Distribution Check (Hourly)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 700]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT ci.*, cd.id as distribution_id, cd.platform, cd.status as dist_status\nFROM content_items ci\nLEFT JOIN content_distribution cd ON ci.id = cd.content_id\nWHERE ci.status = 'approved'\n  AND ci.scheduled_publish_at <= NOW()\n  AND (cd.status IS NULL OR cd.status = 'pending')\nLIMIT 10;",
+        "additionalFields": {}
+      },
+      "id": "db-pending-001",
+      "name": "Get Pending Content",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [460, 700],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process content for distribution\nconst items = $input.all();\nconst distributions = [];\nconst now = new Date();\n\nitems.forEach(item => {\n  const content = item.json;\n  const platforms = content.target_platforms || ['blog'];\n  \n  platforms.forEach(platform => {\n    // Create distribution task for each platform\n    const distribution = {\n      content_id: content.id,\n      content_title: content.title,\n      content_body: content.body,\n      platform: platform,\n      scheduled_at: now.toISOString(),\n      status: 'processing'\n    };\n    \n    // Add platform-specific formatting\n    switch(platform) {\n      case 'twitter':\n        // Create tweet thread from content\n        distribution.formatted_content = createTwitterThread(content);\n        break;\n      case 'linkedin':\n        // Create LinkedIn post\n        distribution.formatted_content = createLinkedInPost(content);\n        break;\n      case 'email':\n        // Create email newsletter format\n        distribution.formatted_content = createEmailContent(content);\n        break;\n      default:\n        // Blog format - use original\n        distribution.formatted_content = content.body;\n    }\n    \n    distributions.push(distribution);\n  });\n});\n\n// Helper functions for platform formatting\nfunction createTwitterThread(content) {\n  const title = content.title;\n  const body = content.body.substring(0, 240);\n  return `📝 ${title}\\n\\n${body}...\\n\\nThread 🧵`;\n}\n\nfunction createLinkedInPost(content) {\n  const title = content.title;\n  const summary = content.body.substring(0, 500);\n  return `${title}\\n\\n${summary}...\\n\\n#business #automation #ai`;\n}\n\nfunction createEmailContent(content) {\n  return `<!DOCTYPE html><html><body><h1>${content.title}</h1>${content.body}</body></html>`;\n}\n\nreturn distributions.map(d => ({ json: d }));"
+      },
+      "id": "dist-process-001",
+      "name": "Prepare Distributions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.platform}}",
+              "operation": "equal",
+              "value2": "blog"
+            }
+          ]
+        }
+      },
+      "id": "platform-switch-001",
+      "name": "Route By Platform",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [900, 700]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Platform Configuration'].json['blog_api_url']}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$node['Platform Configuration'].json['blog_api_key']}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"title\": \"{{$json.content_title}}\",\n  \"content\": {{JSON.stringify($json.formatted_content)}},\n  \"status\": \"publish\"\n}",
+        "options": {}
+      },
+      "id": "blog-publish-001",
+      "name": "Publish to Blog",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [1120, 600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Platform Configuration'].json['linkedin_api_url']}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$node['Platform Configuration'].json['linkedin_api_key']}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": {{JSON.stringify($json.formatted_content)}}\n}",
+        "options": {}
+      },
+      "id": "linkedin-publish-001",
+      "name": "Publish to LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [1120, 750]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Platform Configuration'].json['twitter_api_url']}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$node['Platform Configuration'].json['twitter_api_key']}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": {{JSON.stringify($json.formatted_content)}}\n}",
+        "options": {}
+      },
+      "id": "twitter-publish-001",
+      "name": "Publish to Twitter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [1120, 900]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "blog_api_url",
+              "value": "https://api.example.com/blog/posts"
+            },
+            {
+              "name": "blog_api_key",
+              "value": "your_blog_api_key"
+            },
+            {
+              "name": "linkedin_api_url",
+              "value": "https://api.linkedin.com/v2/shares"
+            },
+            {
+              "name": "linkedin_api_key",
+              "value": "your_linkedin_api_key"
+            },
+            {
+              "name": "twitter_api_url",
+              "value": "https://api.twitter.com/2/tweets"
+            },
+            {
+              "name": "twitter_api_key",
+              "value": "your_twitter_api_key"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "platform-config-001",
+      "name": "Platform Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [240, 900]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Update distribution status after publishing\nconst distribution = $input.item.json;\nconst publishResponse = $input.item;\nconst now = new Date();\n\nconst result = {\n  content_id: distribution.content_id,\n  platform: distribution.platform,\n  status: publishResponse.error ? 'failed' : 'published',\n  platform_post_id: publishResponse.id || null,\n  published_at: publishResponse.error ? null : now.toISOString(),\n  error_message: publishResponse.error || null\n};\n\n// Create Kafka event for distribution\nconst kafkaEvent = {\n  event_id: `dist-${now.getTime()}-${distribution.platform}`,\n  event_type: 'content.distributed',\n  event_source: 'n8n-content-distributor',\n  entity_type: 'content_distribution',\n  entity_id: distribution.content_id,\n  action: 'publish',\n  timestamp: now.toISOString(),\n  data: {\n    content_id: distribution.content_id,\n    content_title: distribution.content_title,\n    platform: distribution.platform,\n    status: result.status\n  }\n};\n\nreturn {\n  json: {\n    result,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "dist-result-001",
+      "name": "Process Distribution Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1340, 750]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "content_distribution",
+        "updateKey": "id",
+        "columns": "status, platform_post_id, published_at, error_message",
+        "additionalFields": {}
+      },
+      "id": "db-dist-update-001",
+      "name": "Update Distribution Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [1560, 750],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topic": "business-events.content-distribution",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-dist-001",
+      "name": "Kafka Distribution Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [1780, 750],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Content Planning": {
+      "main": [
+        [
+          {
+            "node": "Generate Content Topic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Request Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Content Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Content Topic": {
+      "main": [
+        [
+          {
+            "node": "Merge Content Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Content Request": {
+      "main": [
+        [
+          {
+            "node": "Merge Content Requests",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Content Requests": {
+      "main": [
+        [
+          {
+            "node": "AI Content Generation (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Content Generation (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Process Generated Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Generated Content": {
+      "main": [
+        [
+          {
+            "node": "Save Content to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Content to Database": {
+      "main": [
+        [
+          {
+            "node": "Kafka Content Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Distribution Check (Hourly)": {
+      "main": [
+        [
+          {
+            "node": "Get Pending Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pending Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare Distributions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Distributions": {
+      "main": [
+        [
+          {
+            "node": "Route By Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Platform": {
+      "main": [
+        [
+          {
+            "node": "Publish to Blog",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Publish to LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Publish to Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Blog": {
+      "main": [
+        [
+          {
+            "node": "Process Distribution Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Process Distribution Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Twitter": {
+      "main": [
+        [
+          {
+            "node": "Process Distribution Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Distribution Result": {
+      "main": [
+        [
+          {
+            "node": "Update Distribution Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Distribution Status": {
+      "main": [
+        [
+          {
+            "node": "Kafka Distribution Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

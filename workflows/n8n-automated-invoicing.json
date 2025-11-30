@@ -1,0 +1,745 @@
+{
+  "name": "Automated Invoicing with Payment Tracking",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-webhook",
+        "options": {}
+      },
+      "id": "invoice-webhook-001",
+      "name": "Invoice Capture Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-webhook",
+        "options": {}
+      },
+      "id": "payment-webhook-001",
+      "name": "Payment Capture Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and validate incoming invoice\nconst invoice = $input.item.json;\nconst now = new Date();\nconst eventId = `inv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n\n// Generate invoice number if not provided\nif (!invoice.invoice_number) {\n  const prefix = 'INV';\n  const timestamp = Date.now().toString(36).toUpperCase();\n  invoice.invoice_number = `${prefix}-${timestamp}`;\n}\n\n// Calculate dates\nconst issueDate = invoice.issue_date ? new Date(invoice.issue_date) : now;\nconst dueDate = invoice.due_date ? new Date(invoice.due_date) : new Date(issueDate.getTime() + 30 * 24 * 60 * 60 * 1000);\n\n// Calculate amounts\nconst amount = parseFloat(invoice.amount) || 0;\nconst taxRate = parseFloat(invoice.tax_rate) || 0;\nconst taxAmount = amount * (taxRate / 100);\nconst totalAmount = amount + taxAmount;\n\n// Determine urgency based on due date\nconst daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));\nlet urgency = 'normal';\nif (daysUntilDue < 0) urgency = 'overdue';\nelse if (daysUntilDue <= 7) urgency = 'urgent';\nelse if (daysUntilDue <= 14) urgency = 'attention';\n\n// Structure the invoice\nconst processedInvoice = {\n  event_id: eventId,\n  invoice_number: invoice.invoice_number,\n  customer_id: invoice.customer_id || null,\n  vendor: invoice.vendor || 'Unknown',\n  issue_date: issueDate.toISOString().split('T')[0],\n  due_date: dueDate.toISOString().split('T')[0],\n  amount: amount,\n  tax_amount: taxAmount,\n  total_amount: totalAmount,\n  currency: invoice.currency || 'USD',\n  category: invoice.category || 'General',\n  status: 'pending',\n  payment_status: 'unpaid',\n  paid_amount: 0,\n  urgency: urgency,\n  days_until_due: daysUntilDue,\n  notes: invoice.notes || '',\n  line_items: invoice.line_items || [],\n  created_at: now.toISOString(),\n  updated_at: now.toISOString()\n};\n\n// Create Kafka event\nprocessedInvoice.kafka_event = {\n  event_id: eventId,\n  event_type: 'invoice.created',\n  event_source: 'n8n-invoice-processor',\n  entity_type: 'invoice',\n  entity_id: processedInvoice.invoice_number,\n  action: 'create',\n  timestamp: now.toISOString(),\n  data: {\n    invoice_number: processedInvoice.invoice_number,\n    vendor: processedInvoice.vendor,\n    total_amount: processedInvoice.total_amount,\n    currency: processedInvoice.currency,\n    due_date: processedInvoice.due_date,\n    urgency: processedInvoice.urgency\n  }\n};\n\nreturn { json: processedInvoice };"
+      },
+      "id": "invoice-process-001",
+      "name": "Process Invoice Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "invoices",
+        "columns": "invoice_number, customer_id, vendor, issue_date, due_date, amount, tax_amount, total_amount, currency, category, status, payment_status, paid_amount, notes",
+        "additionalFields": {}
+      },
+      "id": "db-invoice-001",
+      "name": "Save Invoice to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [680, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topic": "business-events.invoices",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-invoice-001",
+      "name": "Kafka Invoice Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.urgency}}",
+              "operation": "equal",
+              "value2": "overdue"
+            }
+          ]
+        }
+      },
+      "id": "urgency-switch-001",
+      "name": "Route By Urgency",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create overdue invoice alert\nconst invoice = $input.item.json;\nconst now = new Date();\n\nconst alert = {\n  type: 'OVERDUE_INVOICE_ALERT',\n  priority: 'critical',\n  title: `🚨 OVERDUE: Invoice ${invoice.invoice_number}`,\n  message: `Invoice ${invoice.invoice_number} from ${invoice.vendor} is ${Math.abs(invoice.days_until_due)} days overdue!`,\n  invoice_data: {\n    invoice_number: invoice.invoice_number,\n    vendor: invoice.vendor,\n    total_amount: invoice.total_amount,\n    currency: invoice.currency,\n    due_date: invoice.due_date,\n    days_overdue: Math.abs(invoice.days_until_due)\n  },\n  action_url: `http://localhost:13000/admin/invoices?number=${encodeURIComponent(invoice.invoice_number)}`,\n  timestamp: now.toISOString()\n};\n\n// Create Kafka event for overdue alert\nconst kafkaEvent = {\n  event_id: `overdue-${invoice.event_id}`,\n  event_type: 'invoice.overdue',\n  event_source: 'n8n-invoice-processor',\n  entity_type: 'invoice',\n  entity_id: invoice.invoice_number,\n  action: 'alert',\n  timestamp: now.toISOString(),\n  data: alert\n};\n\nreturn {\n  json: {\n    invoice,\n    alert,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "overdue-alert-001",
+      "name": "Create Overdue Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create urgent invoice notification\nconst invoice = $input.item.json;\nconst now = new Date();\n\nconst notification = {\n  type: 'URGENT_INVOICE_NOTICE',\n  priority: 'high',\n  title: `⚠️ URGENT: Invoice ${invoice.invoice_number} due soon`,\n  message: `Invoice ${invoice.invoice_number} from ${invoice.vendor} is due in ${invoice.days_until_due} days!`,\n  invoice_data: {\n    invoice_number: invoice.invoice_number,\n    vendor: invoice.vendor,\n    total_amount: invoice.total_amount,\n    currency: invoice.currency,\n    due_date: invoice.due_date,\n    days_until_due: invoice.days_until_due\n  },\n  action_url: `http://localhost:13000/admin/invoices?number=${encodeURIComponent(invoice.invoice_number)}`,\n  timestamp: now.toISOString()\n};\n\nreturn {\n  json: {\n    invoice,\n    notification\n  }\n};"
+      },
+      "id": "urgent-notify-001",
+      "name": "Create Urgent Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1340, 350]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Webhook Configuration'].json['accounting_webhook_url']}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.alert) }}",
+        "options": {}
+      },
+      "id": "send-overdue-001",
+      "name": "Send Overdue Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "topic": "business-events.alerts",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-overdue-001",
+      "name": "Kafka Overdue Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [1780, 200],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process incoming payment\nconst payment = $input.item.json;\nconst now = new Date();\nconst eventId = `pmt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n\n// Validate payment data\nconst processedPayment = {\n  event_id: eventId,\n  invoice_number: payment.invoice_number,\n  amount: parseFloat(payment.amount) || 0,\n  payment_date: payment.payment_date || now.toISOString().split('T')[0],\n  payment_method: payment.payment_method || 'unknown',\n  reference: payment.reference || `REF-${Date.now().toString(36).toUpperCase()}`,\n  notes: payment.notes || '',\n  created_at: now.toISOString()\n};\n\n// Create Kafka event\nprocessedPayment.kafka_event = {\n  event_id: eventId,\n  event_type: 'payment.received',\n  event_source: 'n8n-payment-processor',\n  entity_type: 'payment',\n  entity_id: processedPayment.reference,\n  action: 'create',\n  timestamp: now.toISOString(),\n  data: {\n    invoice_number: processedPayment.invoice_number,\n    amount: processedPayment.amount,\n    payment_method: processedPayment.payment_method,\n    reference: processedPayment.reference\n  }\n};\n\nreturn { json: processedPayment };"
+      },
+      "id": "payment-process-001",
+      "name": "Process Payment Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM invoices WHERE invoice_number = '{{$json.invoice_number}}' LIMIT 1;",
+        "additionalFields": {}
+      },
+      "id": "db-get-invoice-001",
+      "name": "Get Invoice Details",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [680, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reconcile payment with invoice\nconst payment = $node['Process Payment Data'].json;\nconst invoiceResult = $input.all();\nconst now = new Date();\n\nif (invoiceResult.length === 0 || !invoiceResult[0].json.invoice_number) {\n  return {\n    json: {\n      success: false,\n      error: 'Invoice not found',\n      payment: payment\n    }\n  };\n}\n\nconst invoice = invoiceResult[0].json;\n\n// Calculate new paid amount\nconst newPaidAmount = parseFloat(invoice.paid_amount || 0) + payment.amount;\nconst remainingAmount = parseFloat(invoice.total_amount) - newPaidAmount;\n\n// Determine new payment status\nlet paymentStatus = 'partial';\nif (remainingAmount <= 0) {\n  paymentStatus = 'paid';\n} else if (newPaidAmount === 0) {\n  paymentStatus = 'unpaid';\n}\n\n// Create reconciliation result\nconst reconciliation = {\n  invoice_id: invoice.id,\n  invoice_number: invoice.invoice_number,\n  previous_paid_amount: parseFloat(invoice.paid_amount || 0),\n  payment_amount: payment.amount,\n  new_paid_amount: newPaidAmount,\n  total_amount: parseFloat(invoice.total_amount),\n  remaining_amount: remainingAmount > 0 ? remainingAmount : 0,\n  payment_status: paymentStatus,\n  payment_reference: payment.reference,\n  reconciled_at: now.toISOString()\n};\n\n// Create Kafka event for reconciliation\nconst kafkaEvent = {\n  event_id: `reconcile-${payment.event_id}`,\n  event_type: 'payment.reconciled',\n  event_source: 'n8n-payment-processor',\n  entity_type: 'invoice',\n  entity_id: invoice.invoice_number,\n  action: 'update',\n  timestamp: now.toISOString(),\n  data: {\n    invoice_number: invoice.invoice_number,\n    payment_amount: payment.amount,\n    new_paid_amount: newPaidAmount,\n    payment_status: paymentStatus,\n    remaining_amount: reconciliation.remaining_amount\n  }\n};\n\nreturn {\n  json: {\n    payment,\n    invoice,\n    reconciliation,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "reconcile-001",
+      "name": "Reconcile Payment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "payments",
+        "columns": "invoice_id, payment_date, amount, payment_method, reference, notes",
+        "additionalFields": {}
+      },
+      "id": "db-payment-001",
+      "name": "Save Payment to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [1120, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE invoices SET paid_amount = {{$json.reconciliation.new_paid_amount}}, payment_status = '{{$json.reconciliation.payment_status}}', updated_at = NOW() WHERE invoice_number = '{{$json.invoice.invoice_number}}';",
+        "additionalFields": {}
+      },
+      "id": "db-update-invoice-001",
+      "name": "Update Invoice Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [1340, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topic": "business-events.payments",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-payment-001",
+      "name": "Kafka Payment Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [1560, 600],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.reconciliation.payment_status}}",
+              "operation": "equal",
+              "value2": "paid"
+            }
+          ]
+        }
+      },
+      "id": "paid-switch-001",
+      "name": "Check If Fully Paid",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1780, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create payment confirmation\nconst data = $input.item.json;\nconst now = new Date();\n\nconst confirmation = {\n  type: 'INVOICE_PAID_CONFIRMATION',\n  priority: 'info',\n  title: `✅ Invoice ${data.invoice.invoice_number} Fully Paid`,\n  message: `Invoice ${data.invoice.invoice_number} has been fully paid. Total: ${data.invoice.currency} ${data.reconciliation.new_paid_amount.toFixed(2)}`,\n  invoice_data: {\n    invoice_number: data.invoice.invoice_number,\n    vendor: data.invoice.vendor,\n    total_amount: data.reconciliation.total_amount,\n    paid_amount: data.reconciliation.new_paid_amount,\n    payment_reference: data.reconciliation.payment_reference\n  },\n  timestamp: now.toISOString()\n};\n\n// Create Kafka event\nconst kafkaEvent = {\n  event_id: `paid-${data.payment.event_id}`,\n  event_type: 'invoice.paid',\n  event_source: 'n8n-payment-processor',\n  entity_type: 'invoice',\n  entity_id: data.invoice.invoice_number,\n  action: 'complete',\n  timestamp: now.toISOString(),\n  data: confirmation.invoice_data\n};\n\nreturn {\n  json: {\n    confirmation,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "paid-confirm-001",
+      "name": "Create Payment Confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [2000, 550]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Webhook Configuration'].json['accounting_webhook_url']}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.confirmation) }}",
+        "options": {}
+      },
+      "id": "send-confirmation-001",
+      "name": "Send Payment Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [2220, 550]
+    },
+    {
+      "parameters": {
+        "topic": "business-events.invoices",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-paid-001",
+      "name": "Kafka Paid Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [2440, 550],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "accounting_webhook_url",
+              "value": "https://hooks.example.org/accounting"
+            },
+            {
+              "name": "approval_webhook_url",
+              "value": "https://hooks.example.org/approvals"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-invoice-001",
+      "name": "Webhook Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [240, 100]
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "days"
+            }
+          ]
+        }
+      },
+      "id": "daily-check-001",
+      "name": "Daily Financial Check",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 900]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  payment_status,\n  COUNT(*) as invoice_count,\n  SUM(total_amount) as total_amount,\n  SUM(paid_amount) as total_paid,\n  SUM(total_amount - paid_amount) as outstanding\nFROM invoices\nGROUP BY payment_status;\n\n-- Also get overdue invoices\nSELECT * FROM invoices\nWHERE payment_status != 'paid'\n  AND due_date < CURRENT_DATE\nORDER BY due_date ASC;",
+        "additionalFields": {}
+      },
+      "id": "db-daily-stats-001",
+      "name": "Get Daily Financial Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [460, 900],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate daily financial summary\nconst results = $input.all();\nconst now = new Date();\n\nconst summary = {\n  report_date: now.toISOString().split('T')[0],\n  generated_at: now.toISOString(),\n  by_status: {},\n  totals: {\n    total_invoices: 0,\n    total_amount: 0,\n    total_paid: 0,\n    outstanding_amount: 0\n  },\n  overdue_invoices: [],\n  alerts: []\n};\n\n// Process results\nresults.forEach(result => {\n  const data = result.json;\n  \n  if (data.payment_status) {\n    // Status summary row\n    summary.by_status[data.payment_status] = {\n      count: parseInt(data.invoice_count),\n      total: parseFloat(data.total_amount),\n      paid: parseFloat(data.total_paid),\n      outstanding: parseFloat(data.outstanding)\n    };\n    \n    summary.totals.total_invoices += parseInt(data.invoice_count);\n    summary.totals.total_amount += parseFloat(data.total_amount);\n    summary.totals.total_paid += parseFloat(data.total_paid);\n    summary.totals.outstanding_amount += parseFloat(data.outstanding);\n  } else if (data.invoice_number) {\n    // Overdue invoice row\n    summary.overdue_invoices.push({\n      invoice_number: data.invoice_number,\n      vendor: data.vendor,\n      total_amount: parseFloat(data.total_amount),\n      due_date: data.due_date\n    });\n  }\n});\n\n// Generate alerts for overdue invoices\nif (summary.overdue_invoices.length > 0) {\n  summary.alerts.push({\n    type: 'OVERDUE_INVOICES',\n    severity: 'high',\n    message: `${summary.overdue_invoices.length} invoices are overdue`,\n    count: summary.overdue_invoices.length\n  });\n}\n\n// Alert if outstanding amount is high\nif (summary.totals.outstanding_amount > 10000) {\n  summary.alerts.push({\n    type: 'HIGH_OUTSTANDING',\n    severity: 'medium',\n    message: `Outstanding amount exceeds threshold: $${summary.totals.outstanding_amount.toFixed(2)}`,\n    amount: summary.totals.outstanding_amount\n  });\n}\n\n// Create Kafka event\nconst kafkaEvent = {\n  event_id: `fin-summary-${now.getTime()}`,\n  event_type: 'report.daily.financial',\n  event_source: 'n8n-financial-processor',\n  entity_type: 'report',\n  entity_id: summary.report_date,\n  action: 'create',\n  timestamp: now.toISOString(),\n  data: summary\n};\n\nreturn {\n  json: {\n    summary,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "daily-summary-001",
+      "name": "Generate Daily Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [680, 900]
+    },
+    {
+      "parameters": {
+        "topic": "business-events.reports",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-summary-001",
+      "name": "Kafka Summary Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [900, 900],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "monthly",
+              "dayOfMonth": 1,
+              "hour": 8
+            }
+          ]
+        }
+      },
+      "id": "monthly-report-001",
+      "name": "Monthly Report Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 1100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH monthly_data AS (\n  SELECT \n    DATE_TRUNC('month', issue_date) as month,\n    COUNT(*) as invoice_count,\n    SUM(total_amount) as total_amount,\n    SUM(paid_amount) as total_paid,\n    SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) as paid_count,\n    AVG(CASE WHEN payment_status = 'paid' THEN \n      EXTRACT(EPOCH FROM (updated_at - issue_date::timestamp))/(24*60*60) \n    END) as avg_days_to_payment\n  FROM invoices\n  WHERE issue_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '12 months')\n  GROUP BY DATE_TRUNC('month', issue_date)\n  ORDER BY month DESC\n)\nSELECT * FROM monthly_data;",
+        "additionalFields": {}
+      },
+      "id": "db-monthly-001",
+      "name": "Get Monthly Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [460, 1100],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate comprehensive monthly report\nconst monthlyData = $input.all();\nconst now = new Date();\n\nconst report = {\n  report_type: 'monthly_financial',\n  report_date: now.toISOString().split('T')[0],\n  generated_at: now.toISOString(),\n  period: {\n    start: new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0],\n    end: new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]\n  },\n  monthly_breakdown: [],\n  totals: {\n    total_invoices: 0,\n    total_amount: 0,\n    total_paid: 0,\n    collection_rate: 0\n  },\n  trends: {\n    invoice_growth: 0,\n    revenue_growth: 0,\n    avg_days_to_payment: 0\n  }\n};\n\n// Process monthly data\nlet totalDaysToPayment = 0;\nlet paymentDataPoints = 0;\n\nmonthlyData.forEach((month, index) => {\n  const data = month.json;\n  \n  const monthEntry = {\n    month: data.month,\n    invoice_count: parseInt(data.invoice_count),\n    total_amount: parseFloat(data.total_amount),\n    total_paid: parseFloat(data.total_paid),\n    paid_count: parseInt(data.paid_count),\n    collection_rate: (parseFloat(data.total_paid) / parseFloat(data.total_amount) * 100).toFixed(1),\n    avg_days_to_payment: parseFloat(data.avg_days_to_payment) || 0\n  };\n  \n  report.monthly_breakdown.push(monthEntry);\n  report.totals.total_invoices += monthEntry.invoice_count;\n  report.totals.total_amount += monthEntry.total_amount;\n  report.totals.total_paid += monthEntry.total_paid;\n  \n  if (monthEntry.avg_days_to_payment > 0) {\n    totalDaysToPayment += monthEntry.avg_days_to_payment;\n    paymentDataPoints++;\n  }\n});\n\n// Calculate overall rates\nreport.totals.collection_rate = (report.totals.total_paid / report.totals.total_amount * 100).toFixed(1);\nreport.trends.avg_days_to_payment = paymentDataPoints > 0 \n  ? (totalDaysToPayment / paymentDataPoints).toFixed(1) \n  : 0;\n\n// Calculate growth trends (comparing last 2 months)\nif (report.monthly_breakdown.length >= 2) {\n  const current = report.monthly_breakdown[0];\n  const previous = report.monthly_breakdown[1];\n  \n  report.trends.invoice_growth = previous.invoice_count > 0 \n    ? (((current.invoice_count - previous.invoice_count) / previous.invoice_count) * 100).toFixed(1)\n    : 0;\n  \n  report.trends.revenue_growth = previous.total_amount > 0\n    ? (((current.total_amount - previous.total_amount) / previous.total_amount) * 100).toFixed(1)\n    : 0;\n}\n\n// Create Kafka event\nconst kafkaEvent = {\n  event_id: `monthly-fin-${now.getTime()}`,\n  event_type: 'report.monthly.financial',\n  event_source: 'n8n-financial-processor',\n  entity_type: 'report',\n  entity_id: report.period.start,\n  action: 'create',\n  timestamp: now.toISOString(),\n  data: {\n    period: report.period,\n    totals: report.totals,\n    trends: report.trends\n  }\n};\n\nreturn {\n  json: {\n    report,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "monthly-gen-001",
+      "name": "Generate Monthly Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [680, 1100]
+    },
+    {
+      "parameters": {
+        "topic": "business-events.reports",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-monthly-001",
+      "name": "Kafka Monthly Report",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [900, 1100],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Invoice Capture Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Invoice Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Invoice Data": {
+      "main": [
+        [
+          {
+            "node": "Save Invoice to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Invoice to Database": {
+      "main": [
+        [
+          {
+            "node": "Kafka Invoice Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kafka Invoice Event": {
+      "main": [
+        [
+          {
+            "node": "Route By Urgency",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Urgency": {
+      "main": [
+        [
+          {
+            "node": "Create Overdue Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Urgent Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Overdue Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Overdue Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Overdue Alert": {
+      "main": [
+        [
+          {
+            "node": "Kafka Overdue Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Capture Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Payment Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Payment Data": {
+      "main": [
+        [
+          {
+            "node": "Get Invoice Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoice Details": {
+      "main": [
+        [
+          {
+            "node": "Reconcile Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconcile Payment": {
+      "main": [
+        [
+          {
+            "node": "Save Payment to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Payment to Database": {
+      "main": [
+        [
+          {
+            "node": "Update Invoice Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Invoice Status": {
+      "main": [
+        [
+          {
+            "node": "Kafka Payment Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kafka Payment Event": {
+      "main": [
+        [
+          {
+            "node": "Check If Fully Paid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Fully Paid": {
+      "main": [
+        [
+          {
+            "node": "Create Payment Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Payment Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Send Payment Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Payment Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Kafka Paid Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Financial Check": {
+      "main": [
+        [
+          {
+            "node": "Get Daily Financial Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Daily Financial Stats": {
+      "main": [
+        [
+          {
+            "node": "Generate Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Kafka Summary Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monthly Report Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Monthly Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Monthly Stats": {
+      "main": [
+        [
+          {
+            "node": "Generate Monthly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Monthly Report": {
+      "main": [
+        [
+          {
+            "node": "Kafka Monthly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
