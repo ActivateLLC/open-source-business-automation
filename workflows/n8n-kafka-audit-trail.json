@@ -1,0 +1,281 @@
+{
+  "name": "Kafka Audit Trail Consumer",
+  "nodes": [
+    {
+      "parameters": {
+        "topic": "business-events.*",
+        "groupId": "audit-trail-consumer",
+        "options": {
+          "readMessagesFromBeginning": false
+        }
+      },
+      "id": "kafka-consumer-001",
+      "name": "Kafka Event Consumer",
+      "type": "n8n-nodes-base.kafkaTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process incoming Kafka event for audit trail\nconst message = $input.item.json;\nconst now = new Date();\n\n// Parse the event data\nlet eventData;\ntry {\n  eventData = typeof message === 'string' ? JSON.parse(message) : message;\n} catch (error) {\n  eventData = {\n    event_id: `unknown-${now.getTime()}`,\n    event_type: 'unknown',\n    event_source: 'kafka',\n    data: { raw: message },\n    error: error.message\n  };\n}\n\n// Structure the audit record\nconst auditRecord = {\n  event_id: eventData.event_id || `evt-${now.getTime()}`,\n  event_type: eventData.event_type || 'unknown',\n  event_source: eventData.event_source || 'unknown',\n  entity_type: eventData.entity_type || null,\n  entity_id: eventData.entity_id || null,\n  user_id: eventData.user_id || null,\n  action: eventData.action || 'unknown',\n  old_values: eventData.old_values ? JSON.stringify(eventData.old_values) : null,\n  new_values: eventData.data ? JSON.stringify(eventData.data) : null,\n  metadata: JSON.stringify({\n    timestamp: eventData.timestamp,\n    processed_at: now.toISOString()\n  }),\n  kafka_topic: $input.item.json._topic || 'unknown',\n  kafka_partition: $input.item.json._partition || 0,\n  kafka_offset: $input.item.json._offset || 0,\n  created_at: now.toISOString()\n};\n\nreturn { json: auditRecord };"
+      },
+      "id": "process-event-001",
+      "name": "Process Kafka Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "audit_trail",
+        "columns": "event_id, event_type, event_source, entity_type, entity_id, user_id, action, old_values, new_values, metadata, kafka_topic, kafka_partition, kafka_offset",
+        "additionalFields": {}
+      },
+      "id": "db-audit-001",
+      "name": "Save to Audit Trail",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [680, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.event_type}}",
+              "operation": "contains",
+              "value2": "alert"
+            }
+          ]
+        }
+      },
+      "id": "alert-check-001",
+      "name": "Check For Alerts",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process alert events for real-time notifications\nconst auditRecord = $input.item.json;\nconst now = new Date();\n\nconst alertNotification = {\n  type: 'SYSTEM_ALERT',\n  source: auditRecord.event_source,\n  event_type: auditRecord.event_type,\n  entity_type: auditRecord.entity_type,\n  entity_id: auditRecord.entity_id,\n  message: `Alert triggered: ${auditRecord.event_type} for ${auditRecord.entity_type} ${auditRecord.entity_id}`,\n  data: auditRecord.new_values ? JSON.parse(auditRecord.new_values) : {},\n  timestamp: now.toISOString()\n};\n\nreturn { json: alertNotification };"
+      },
+      "id": "alert-process-001",
+      "name": "Process Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Configuration'].json['alert_webhook_url']}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "send-alert-001",
+      "name": "Send Real-Time Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "alert_webhook_url",
+              "value": "https://hooks.example.org/real-time-alerts"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-audit-001",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [240, 100]
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "hours"
+            }
+          ]
+        }
+      },
+      "id": "hourly-metrics-001",
+      "name": "Hourly Metrics Update",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 500]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Calculate hourly metrics from audit trail\nWITH hourly_events AS (\n  SELECT \n    event_type,\n    entity_type,\n    action,\n    COUNT(*) as event_count,\n    DATE_TRUNC('hour', created_at) as hour\n  FROM audit_trail\n  WHERE created_at >= NOW() - INTERVAL '1 hour'\n  GROUP BY event_type, entity_type, action, DATE_TRUNC('hour', created_at)\n)\nSELECT * FROM hourly_events;",
+        "additionalFields": {}
+      },
+      "id": "db-hourly-001",
+      "name": "Get Hourly Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [460, 500],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate hourly metrics for dashboard\nconst metrics = $input.all();\nconst now = new Date();\n\nconst hourlyMetrics = {\n  period_start: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),\n  period_end: now.toISOString(),\n  total_events: 0,\n  by_event_type: {},\n  by_entity_type: {},\n  by_action: {}\n};\n\nmetrics.forEach(metric => {\n  const m = metric.json;\n  const count = parseInt(m.event_count);\n  \n  hourlyMetrics.total_events += count;\n  \n  // Aggregate by event type\n  if (!hourlyMetrics.by_event_type[m.event_type]) {\n    hourlyMetrics.by_event_type[m.event_type] = 0;\n  }\n  hourlyMetrics.by_event_type[m.event_type] += count;\n  \n  // Aggregate by entity type\n  if (m.entity_type) {\n    if (!hourlyMetrics.by_entity_type[m.entity_type]) {\n      hourlyMetrics.by_entity_type[m.entity_type] = 0;\n    }\n    hourlyMetrics.by_entity_type[m.entity_type] += count;\n  }\n  \n  // Aggregate by action\n  if (!hourlyMetrics.by_action[m.action]) {\n    hourlyMetrics.by_action[m.action] = 0;\n  }\n  hourlyMetrics.by_action[m.action] += count;\n});\n\nreturn { json: hourlyMetrics };"
+      },
+      "id": "aggregate-metrics-001",
+      "name": "Aggregate Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "dashboard_metrics",
+        "columns": "metric_name, metric_value, metric_type, dimensions, period_start, period_end",
+        "additionalFields": {}
+      },
+      "id": "db-metrics-001",
+      "name": "Save Dashboard Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [900, 500],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Kafka Event Consumer": {
+      "main": [
+        [
+          {
+            "node": "Process Kafka Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Kafka Event": {
+      "main": [
+        [
+          {
+            "node": "Save to Audit Trail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Audit Trail": {
+      "main": [
+        [
+          {
+            "node": "Check For Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check For Alerts": {
+      "main": [
+        [
+          {
+            "node": "Process Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Real-Time Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hourly Metrics Update": {
+      "main": [
+        [
+          {
+            "node": "Get Hourly Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Hourly Metrics": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Metrics": {
+      "main": [
+        [
+          {
+            "node": "Save Dashboard Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

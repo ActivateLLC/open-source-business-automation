@@ -1,0 +1,493 @@
+{
+  "name": "AI Lead Processing with Scoring, Routing & Kafka Events",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-capture",
+        "options": {}
+      },
+      "id": "lead-webhook-001",
+      "name": "Lead Capture Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lead data standardization and initial enrichment\nconst lead = $input.item.json;\nconst eventId = `lead-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n\n// Standardize email (lowercase and trim)\nif (lead.email) {\n  lead.email = lead.email.toLowerCase().trim();\n}\n\n// Standardize name (capitalize first letter of each word)\nif (lead.name) {\n  lead.name = lead.name\n    .split(' ')\n    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())\n    .join(' ');\n}\n\n// Standardize phone (remove non-numeric characters)\nif (lead.phone) {\n  lead.phone = lead.phone.replace(/\\D/g, '');\n}\n\n// Calculate initial rule-based score\nlet score = 0;\n\n// Add points for completeness of information\nif (lead.email) score += 10;\nif (lead.phone) score += 10;\nif (lead.company) score += 15;\nif (lead.jobTitle) score += 10;\n\n// Add points for specific criteria\nif (lead.source === 'referral') score += 25;\nif (lead.source === 'organic_search') score += 15;\nif (lead.source === 'paid_search') score += 10;\n\n// Add industry-specific scoring\nconst highValueIndustries = ['healthcare', 'finance', 'technology', 'manufacturing', 'enterprise'];\nif (lead.industry && highValueIndustries.includes(lead.industry.toLowerCase())) {\n  score += 20;\n}\n\n// Add company size scoring\nif (lead.companySize) {\n  const size = parseInt(lead.companySize);\n  if (size > 1000) score += 25;\n  else if (size > 100) score += 15;\n  else if (size > 10) score += 5;\n}\n\n// Add calculated fields to the lead\nlead.rule_based_score = score;\nlead.event_id = eventId;\nlead.processed_date = new Date().toISOString();\nlead.status = 'new';\n\n// Return the standardized lead\nreturn {json: lead};"
+      },
+      "id": "lead-enrich-001",
+      "name": "Lead Standardization",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama2\",\n  \"prompt\": \"You are an expert lead scoring AI. Analyze this lead data and provide a score from 0-100 and routing recommendation.\\n\\nLead Data:\\n- Name: {{$json.name}}\\n- Email: {{$json.email}}\\n- Company: {{$json.company}}\\n- Job Title: {{$json.jobTitle}}\\n- Industry: {{$json.industry}}\\n- Company Size: {{$json.companySize}}\\n- Source: {{$json.source}}\\n- Initial Score: {{$json.rule_based_score}}\\n\\nRespond ONLY in this exact JSON format:\\n{\\\"ai_score\\\": <number 0-100>, \\\"tier\\\": \\\"hot|warm|cold\\\", \\\"reasoning\\\": \\\"<brief explanation>\\\", \\\"recommended_action\\\": \\\"<next step>\\\", \\\"assigned_team\\\": \\\"sales|marketing|support\\\"}\",\n  \"stream\": false\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "ai-scoring-001",
+      "name": "AI Lead Scoring (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI response and merge with lead data\nconst lead = $node['Lead Standardization'].json;\nlet aiResponse;\n\ntry {\n  // Parse the Ollama response\n  const ollamaResponse = $input.item.json.response;\n  \n  // Extract JSON from the response\n  const jsonMatch = ollamaResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    aiResponse = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found in AI response');\n  }\n} catch (error) {\n  // Fallback to rule-based scoring if AI fails\n  const score = lead.rule_based_score;\n  aiResponse = {\n    ai_score: score,\n    tier: score >= 50 ? 'hot' : score >= 30 ? 'warm' : 'cold',\n    reasoning: 'Fallback to rule-based scoring due to AI parsing error: ' + error.message,\n    recommended_action: 'Manual review recommended',\n    assigned_team: score >= 50 ? 'sales' : 'marketing'\n  };\n}\n\n// Merge AI scoring with lead data\nlead.ai_score = aiResponse.ai_score;\nlead.tier = aiResponse.tier;\nlead.ai_score_reasoning = aiResponse.reasoning;\nlead.recommended_action = aiResponse.recommended_action;\nlead.assigned_team = aiResponse.assigned_team;\n\n// Calculate final combined score (weighted average)\nlead.final_score = Math.round((lead.rule_based_score * 0.3) + (aiResponse.ai_score * 0.7));\n\n// Kafka event payload\nlead.kafka_event = {\n  event_id: lead.event_id,\n  event_type: 'lead.scored',\n  event_source: 'n8n-lead-processor',\n  entity_type: 'lead',\n  entity_id: lead.email,\n  action: 'create',\n  timestamp: new Date().toISOString(),\n  data: {\n    email: lead.email,\n    name: lead.name,\n    company: lead.company,\n    tier: lead.tier,\n    ai_score: lead.ai_score,\n    final_score: lead.final_score,\n    assigned_team: lead.assigned_team\n  }\n};\n\nreturn {json: lead};"
+      },
+      "id": "ai-merge-001",
+      "name": "Merge AI Scoring",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "leads",
+        "columns": "email, name, phone, company, job_title, industry, company_size, source, tier, score, ai_score, ai_score_reasoning, assigned_to, status",
+        "additionalFields": {}
+      },
+      "id": "db-insert-001",
+      "name": "Save Lead to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [1120, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topic": "business-events.leads",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-pub-001",
+      "name": "Publish to Kafka (Audit Trail)",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.tier}}",
+              "operation": "equal",
+              "value2": "hot"
+            }
+          ]
+        }
+      },
+      "id": "route-tier-001",
+      "name": "Route By Lead Tier",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Hot lead processing - immediate action required\nconst lead = $input.item.json;\n\n// Create notification payload\nconst notification = {\n  type: 'HOT_LEAD_ALERT',\n  priority: 'high',\n  title: `🔥 Hot Lead: ${lead.name} from ${lead.company}`,\n  message: `AI Score: ${lead.ai_score}/100 | ${lead.recommended_action}`,\n  lead_data: {\n    email: lead.email,\n    name: lead.name,\n    company: lead.company,\n    tier: lead.tier,\n    score: lead.final_score,\n    assigned_team: lead.assigned_team,\n    reasoning: lead.ai_score_reasoning\n  },\n  action_url: `http://localhost:13000/admin/leads?email=${encodeURIComponent(lead.email)}`,\n  timestamp: new Date().toISOString()\n};\n\n// Create Kafka event for hot lead routing\nconst kafkaEvent = {\n  event_id: `hot-${lead.event_id}`,\n  event_type: 'lead.routed.hot',\n  event_source: 'n8n-lead-processor',\n  entity_type: 'lead',\n  entity_id: lead.email,\n  action: 'route',\n  timestamp: new Date().toISOString(),\n  data: notification\n};\n\nreturn {\n  json: {\n    lead,\n    notification,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "hot-process-001",
+      "name": "Process Hot Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1780, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Warm lead processing - nurturing required\nconst lead = $input.item.json;\n\n// Create nurturing workflow trigger\nconst nurturingTask = {\n  type: 'WARM_LEAD_NURTURE',\n  priority: 'medium',\n  title: `📧 Nurture Lead: ${lead.name} from ${lead.company}`,\n  message: `AI Score: ${lead.ai_score}/100 | ${lead.recommended_action}`,\n  lead_data: {\n    email: lead.email,\n    name: lead.name,\n    company: lead.company,\n    tier: lead.tier,\n    score: lead.final_score,\n    assigned_team: lead.assigned_team\n  },\n  suggested_actions: [\n    'Add to email drip campaign',\n    'Schedule follow-up in 3 days',\n    'Send educational content'\n  ],\n  timestamp: new Date().toISOString()\n};\n\n// Create Kafka event for warm lead routing\nconst kafkaEvent = {\n  event_id: `warm-${lead.event_id}`,\n  event_type: 'lead.routed.warm',\n  event_source: 'n8n-lead-processor',\n  entity_type: 'lead',\n  entity_id: lead.email,\n  action: 'route',\n  timestamp: new Date().toISOString(),\n  data: nurturingTask\n};\n\nreturn {\n  json: {\n    lead,\n    nurturing_task: nurturingTask,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "warm-process-001",
+      "name": "Process Warm Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Cold lead processing - long-term nurturing\nconst lead = $input.item.json;\n\n// Create cold lead task\nconst coldLeadTask = {\n  type: 'COLD_LEAD_QUEUE',\n  priority: 'low',\n  title: `❄️ Cold Lead: ${lead.name} from ${lead.company || 'Unknown'}`,\n  message: `AI Score: ${lead.ai_score}/100 | ${lead.recommended_action}`,\n  lead_data: {\n    email: lead.email,\n    name: lead.name,\n    company: lead.company,\n    tier: lead.tier,\n    score: lead.final_score\n  },\n  suggested_actions: [\n    'Add to newsletter',\n    'Monitor for re-engagement',\n    'Retarget with ads'\n  ],\n  timestamp: new Date().toISOString()\n};\n\n// Create Kafka event for cold lead routing\nconst kafkaEvent = {\n  event_id: `cold-${lead.event_id}`,\n  event_type: 'lead.routed.cold',\n  event_source: 'n8n-lead-processor',\n  entity_type: 'lead',\n  entity_id: lead.email,\n  action: 'route',\n  timestamp: new Date().toISOString(),\n  data: coldLeadTask\n};\n\nreturn {\n  json: {\n    lead,\n    cold_lead_task: coldLeadTask,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "cold-process-001",
+      "name": "Process Cold Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1780, 500]
+    },
+    {
+      "parameters": {
+        "topic": "business-events.lead-routing",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-hot-001",
+      "name": "Kafka Hot Lead Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [2000, 100],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topic": "business-events.lead-routing",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-warm-001",
+      "name": "Kafka Warm Lead Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [2000, 300],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topic": "business-events.lead-routing",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-cold-001",
+      "name": "Kafka Cold Lead Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [2000, 500],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$node['Webhook Configuration'].json['notification_webhook_url']}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.notification) }}",
+        "options": {}
+      },
+      "id": "notify-hot-001",
+      "name": "Send Hot Lead Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3.1,
+      "position": [2220, 100]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "notification_webhook_url",
+              "value": "https://hooks.example.org/notifications"
+            },
+            {
+              "name": "crm_webhook_url",
+              "value": "https://hooks.example.org/crm"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-001",
+      "name": "Webhook Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [240, 100]
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "days"
+            }
+          ]
+        }
+      },
+      "id": "cron-summary-001",
+      "name": "Daily Lead Summary Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 700]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  tier,\n  COUNT(*) as lead_count,\n  AVG(score) as avg_score,\n  AVG(ai_score) as avg_ai_score\nFROM leads\nWHERE created_at >= NOW() - INTERVAL '24 hours'\nGROUP BY tier\nORDER BY lead_count DESC;",
+        "additionalFields": {}
+      },
+      "id": "db-summary-001",
+      "name": "Get Daily Lead Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.3,
+      "position": [460, 700],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate comprehensive daily summary\nconst stats = $input.all();\nconst now = new Date();\n\nlet summary = {\n  report_date: now.toISOString().split('T')[0],\n  generated_at: now.toISOString(),\n  total_leads: 0,\n  by_tier: {\n    hot: { count: 0, avg_score: 0, avg_ai_score: 0 },\n    warm: { count: 0, avg_score: 0, avg_ai_score: 0 },\n    cold: { count: 0, avg_score: 0, avg_ai_score: 0 }\n  }\n};\n\nstats.forEach(stat => {\n  const tier = stat.json.tier;\n  if (summary.by_tier[tier]) {\n    summary.by_tier[tier].count = parseInt(stat.json.lead_count);\n    summary.by_tier[tier].avg_score = parseFloat(stat.json.avg_score) || 0;\n    summary.by_tier[tier].avg_ai_score = parseFloat(stat.json.avg_ai_score) || 0;\n    summary.total_leads += parseInt(stat.json.lead_count);\n  }\n});\n\n// Create Kafka event for daily summary\nconst kafkaEvent = {\n  event_id: `summary-${now.getTime()}`,\n  event_type: 'report.daily.leads',\n  event_source: 'n8n-lead-processor',\n  entity_type: 'report',\n  entity_id: summary.report_date,\n  action: 'create',\n  timestamp: now.toISOString(),\n  data: summary\n};\n\nreturn {\n  json: {\n    summary,\n    kafka_event: kafkaEvent\n  }\n};"
+      },
+      "id": "summary-gen-001",
+      "name": "Generate Summary Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "topic": "business-events.reports",
+        "message": "={{ JSON.stringify($json.kafka_event) }}",
+        "options": {
+          "acks": "all"
+        }
+      },
+      "id": "kafka-summary-001",
+      "name": "Kafka Summary Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [900, 700],
+      "credentials": {
+        "kafka": {
+          "id": "1",
+          "name": "Kafka"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Lead Capture Webhook": {
+      "main": [
+        [
+          {
+            "node": "Lead Standardization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Standardization": {
+      "main": [
+        [
+          {
+            "node": "AI Lead Scoring (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Lead Scoring (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge AI Scoring": {
+      "main": [
+        [
+          {
+            "node": "Save Lead to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Lead to Database": {
+      "main": [
+        [
+          {
+            "node": "Publish to Kafka (Audit Trail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Kafka (Audit Trail)": {
+      "main": [
+        [
+          {
+            "node": "Route By Lead Tier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route By Lead Tier": {
+      "main": [
+        [
+          {
+            "node": "Process Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Warm Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Cold Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Hot Lead": {
+      "main": [
+        [
+          {
+            "node": "Kafka Hot Lead Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Warm Lead": {
+      "main": [
+        [
+          {
+            "node": "Kafka Warm Lead Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Cold Lead": {
+      "main": [
+        [
+          {
+            "node": "Kafka Cold Lead Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kafka Hot Lead Event": {
+      "main": [
+        [
+          {
+            "node": "Send Hot Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Lead Summary Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Daily Lead Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Daily Lead Stats": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary Report": {
+      "main": [
+        [
+          {
+            "node": "Kafka Summary Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
