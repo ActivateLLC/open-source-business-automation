@@ -1,0 +1,375 @@
+summary: Content Automation Pipeline
+description: AI-assisted content creation and multi-channel distribution workflow
+
+# Windmill Flow Definition for Content Automation
+# Import this file into Windmill to create the workflow
+
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    topics:
+      type: array
+      items:
+        type: string
+      description: Base topics for content generation
+      default:
+        - automation
+        - productivity
+        - open-source
+    content_count:
+      type: integer
+      description: Number of content pieces to generate
+      default: 5
+    channels:
+      type: array
+      items:
+        type: string
+        enum:
+          - blog
+          - twitter
+          - linkedin
+          - newsletter
+      description: Distribution channels
+      default:
+        - blog
+        - twitter
+        - linkedin
+
+value:
+  modules:
+    # Step 1: Generate Content Ideas
+    - id: generate_ideas
+      value:
+        type: rawscript
+        language: python3
+        content: |
+          import json
+          from datetime import datetime
+          
+          def main(topics: list, content_count: int = 5):
+              """
+              Generate content ideas based on topics and trends.
+              """
+              ideas = []
+              
+              # Content idea templates
+              templates = [
+                  "How {topic} is transforming businesses in 2025",
+                  "The complete guide to {topic} for beginners",
+                  "5 {topic} mistakes that cost companies millions",
+                  "{topic} best practices from industry leaders",
+                  "The future of {topic}: trends and predictions",
+                  "Getting started with {topic}: a step-by-step guide",
+                  "{topic} vs traditional approaches: a comparison",
+                  "Real-world {topic} success stories"
+              ]
+              
+              for topic in topics:
+                  for template in templates[:content_count]:
+                      title = template.format(topic=topic)
+                      ideas.append({
+                          "topic": topic,
+                          "title": title,
+                          "format": "blog_post",
+                          "priority": "high" if "guide" in title.lower() else "medium",
+                          "keywords": [topic, "2025", "business"],
+                          "estimated_words": 1200
+                      })
+              
+              return {
+                  "ideas": ideas[:content_count],
+                  "generated_at": datetime.now().isoformat()
+              }
+        input_transforms:
+          topics:
+            type: javascript
+            expr: flow_input.topics
+          content_count:
+            type: javascript
+            expr: flow_input.content_count
+
+    # Step 2: Generate Content with AI
+    - id: generate_content
+      value:
+        type: forloopflow
+        iterator:
+          type: javascript
+          expr: results.generate_ideas.ideas
+        modules:
+          - id: ai_writer
+            value:
+              type: rawscript
+              language: deno
+              content: |
+                import Anthropic from "npm:@anthropic-ai/sdk@0.24.3";
+                
+                type Idea = {
+                  topic: string;
+                  title: string;
+                  format: string;
+                  keywords: string[];
+                  estimated_words: number;
+                };
+                
+                export async function main(idea: Idea): Promise<object> {
+                  const client = new Anthropic();
+                  
+                  const prompt = `Write a ${idea.estimated_words}-word blog post with the title: "${idea.title}"
+
+Requirements:
+- Professional but engaging tone
+- Include practical examples
+- Use the following keywords naturally: ${idea.keywords.join(", ")}
+- Structure with clear headings and subheadings
+- Include an introduction, main sections, and conclusion
+- Add a call-to-action at the end
+
+Write the complete article now:`;
+
+                  const message = await client.messages.create({
+                    model: "claude-3-sonnet-20240229",
+                    max_tokens: 3000,
+                    messages: [
+                      { role: "user", content: prompt }
+                    ]
+                  });
+                  
+                  const content = message.content[0].type === 'text' 
+                    ? message.content[0].text 
+                    : '';
+                  
+                  return {
+                    idea: idea,
+                    content: content,
+                    word_count: content.split(/\s+/).length,
+                    generated_at: new Date().toISOString(),
+                    model: "claude-3-sonnet"
+                  };
+                }
+              input_transforms:
+                idea:
+                  type: javascript
+                  expr: iter.value
+
+    # Step 3: Quality Check
+    - id: quality_check
+      value:
+        type: forloopflow
+        iterator:
+          type: javascript
+          expr: results.generate_content
+        modules:
+          - id: check_quality
+            value:
+              type: rawscript
+              language: python3
+              content: |
+                import re
+                
+                def main(content_item: dict) -> dict:
+                    """
+                    Check content quality and assign a score.
+                    """
+                    content = content_item.get("content", "")
+                    idea = content_item.get("idea", {})
+                    
+                    score = 100
+                    issues = []
+                    
+                    # Word count check
+                    word_count = len(content.split())
+                    target_words = idea.get("estimated_words", 1000)
+                    
+                    if word_count < target_words * 0.7:
+                        score -= 20
+                        issues.append(f"Content too short: {word_count} words (target: {target_words})")
+                    elif word_count > target_words * 1.5:
+                        score -= 10
+                        issues.append(f"Content too long: {word_count} words")
+                    
+                    # Keyword check
+                    keywords = idea.get("keywords", [])
+                    for keyword in keywords:
+                        if keyword.lower() not in content.lower():
+                            score -= 5
+                            issues.append(f"Missing keyword: {keyword}")
+                    
+                    # Structure check
+                    if "##" not in content and "#" not in content:
+                        score -= 15
+                        issues.append("Missing section headings")
+                    
+                    # Call-to-action check
+                    cta_patterns = ["contact us", "learn more", "get started", "try", "sign up"]
+                    has_cta = any(pattern in content.lower() for pattern in cta_patterns)
+                    if not has_cta:
+                        score -= 10
+                        issues.append("Missing call-to-action")
+                    
+                    return {
+                        **content_item,
+                        "quality_score": max(0, score),
+                        "quality_issues": issues,
+                        "requires_review": score < 80
+                    }
+              input_transforms:
+                content_item:
+                  type: javascript
+                  expr: iter.value
+
+    # Step 4: Distribute Content
+    - id: distribute_content
+      value:
+        type: branchall
+        branches:
+          - summary: Blog Distribution
+            modules:
+              - id: publish_blog
+                value:
+                  type: rawscript
+                  language: python3
+                  content: |
+                    import requests
+                    
+                    def main(content_items: list, wordpress_url: str, wordpress_auth: str) -> dict:
+                        """
+                        Publish approved content to WordPress blog.
+                        """
+                        published = []
+                        
+                        for item in content_items:
+                            if item.get("quality_score", 0) >= 70 and not item.get("requires_review"):
+                                # Create WordPress post
+                                post_data = {
+                                    "title": item["idea"]["title"],
+                                    "content": item["content"],
+                                    "status": "draft",
+                                    "categories": [],
+                                    "tags": item["idea"]["keywords"]
+                                }
+                                
+                                # In real implementation, make WordPress API call
+                                # response = requests.post(f"{wordpress_url}/wp-json/wp/v2/posts", ...)
+                                
+                                published.append({
+                                    "title": item["idea"]["title"],
+                                    "status": "draft",
+                                    "platform": "blog"
+                                })
+                        
+                        return {"published": published, "count": len(published)}
+
+          - summary: Twitter Distribution
+            modules:
+              - id: create_tweets
+                value:
+                  type: rawscript
+                  language: python3
+                  content: |
+                    def main(content_items: list) -> dict:
+                        """
+                        Create tweet threads from blog content.
+                        """
+                        tweets = []
+                        
+                        for item in content_items:
+                            if item.get("quality_score", 0) >= 70:
+                                # Extract key points for tweet thread
+                                title = item["idea"]["title"]
+                                
+                                tweets.append({
+                                    "thread": [
+                                        f"📝 New post: {title}",
+                                        f"Key insights from our latest article on {item['idea']['topic']}...",
+                                        "Read the full article: [link]"
+                                    ],
+                                    "status": "scheduled"
+                                })
+                        
+                        return {"tweets": tweets, "count": len(tweets)}
+
+          - summary: LinkedIn Distribution
+            modules:
+              - id: create_linkedin_posts
+                value:
+                  type: rawscript
+                  language: python3
+                  content: |
+                    def main(content_items: list) -> dict:
+                        """
+                        Create LinkedIn posts from blog content.
+                        """
+                        posts = []
+                        
+                        for item in content_items:
+                            if item.get("quality_score", 0) >= 70:
+                                title = item["idea"]["title"]
+                                topic = item["idea"]["topic"]
+                                
+                                posts.append({
+                                    "content": f"""🚀 {title}
+
+I've been diving deep into {topic} and wanted to share some key insights:
+
+1️⃣ [Key point 1]
+2️⃣ [Key point 2]  
+3️⃣ [Key point 3]
+
+What's your experience with {topic}? Let me know in the comments! 👇
+
+#Business #Automation #Technology""",
+                                    "status": "draft"
+                                })
+                        
+                        return {"posts": posts, "count": len(posts)}
+
+    # Step 5: Generate Report
+    - id: generate_report
+      value:
+        type: rawscript
+        language: python3
+        content: |
+          from datetime import datetime
+          
+          def main(
+              ideas: dict,
+              content: list,
+              quality: list,
+              distribution: list
+          ) -> dict:
+              """
+              Generate a summary report of the content pipeline run.
+              """
+              return {
+                  "report": {
+                      "timestamp": datetime.now().isoformat(),
+                      "summary": {
+                          "ideas_generated": len(ideas.get("ideas", [])),
+                          "content_created": len(content),
+                          "quality_passed": sum(1 for c in quality if c.get("quality_score", 0) >= 70),
+                          "content_distributed": sum(d.get("count", 0) for d in distribution if isinstance(d, dict))
+                      },
+                      "quality_scores": [
+                          {
+                              "title": c["idea"]["title"],
+                              "score": c.get("quality_score", 0),
+                              "issues": c.get("quality_issues", [])
+                          }
+                          for c in quality
+                      ]
+                  }
+              }
+        input_transforms:
+          ideas:
+            type: javascript
+            expr: results.generate_ideas
+          content:
+            type: javascript
+            expr: results.generate_content
+          quality:
+            type: javascript
+            expr: results.quality_check
+          distribution:
+            type: javascript
+            expr: results.distribute_content

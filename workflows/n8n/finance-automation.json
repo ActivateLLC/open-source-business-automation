@@ -1,0 +1,584 @@
+{
+  "name": "Financial Operations Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute",
+              "minute": 5
+            }
+          ]
+        },
+        "mailbox": "INBOX",
+        "options": {
+          "forceReconnect": true
+        }
+      },
+      "id": "invoice-email-monitor",
+      "name": "Invoice Email Monitor",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "credentials": {
+        "imap": {
+          "id": "1",
+          "name": "Invoice Mailbox"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter for invoice emails\nconst email = $input.item.json;\n\n// Check if email likely contains an invoice\nconst subjectLower = (email.subject || '').toLowerCase();\nconst hasInvoiceKeyword = ['invoice', 'inv', 'bill', 'payment', 'receipt'].some(\n  keyword => subjectLower.includes(keyword)\n);\n\n// Check for attachments\nconst hasAttachments = email.attachments && email.attachments.length > 0;\nconst hasPdfAttachment = hasAttachments && email.attachments.some(\n  att => att.filename && att.filename.toLowerCase().endsWith('.pdf')\n);\n\nif (hasInvoiceKeyword && hasPdfAttachment) {\n  return {\n    json: {\n      ...email,\n      isInvoiceEmail: true,\n      pdfAttachments: email.attachments.filter(\n        att => att.filename && att.filename.toLowerCase().endsWith('.pdf')\n      )\n    }\n  };\n}\n\n// Skip non-invoice emails\nreturn null;"
+      },
+      "id": "filter-invoice-emails",
+      "name": "Filter Invoice Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "operation": "analyzeExpense",
+        "inputDataType": "document",
+        "options": {}
+      },
+      "id": "ocr-extraction",
+      "name": "OCR Extraction (AWS Textract)",
+      "type": "n8n-nodes-base.awsTextract",
+      "typeVersion": 1,
+      "position": [640, 300],
+      "credentials": {
+        "aws": {
+          "id": "2",
+          "name": "AWS Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse OCR response and extract invoice data\nconst ocrResponse = $input.item.json;\n\n// Helper function to find field value\nfunction findField(fields, patterns) {\n  for (const field of fields || []) {\n    const label = (field.Type?.Text || '').toLowerCase();\n    for (const pattern of patterns) {\n      if (label.includes(pattern)) {\n        return field.ValueDetection?.Text || field.Value?.Text;\n      }\n    }\n  }\n  return null;\n}\n\n// Extract key invoice fields\nconst summaryFields = ocrResponse.ExpenseDocuments?.[0]?.SummaryFields || [];\n\nconst invoiceData = {\n  invoiceNumber: findField(summaryFields, ['invoice', 'inv #', 'invoice number']),\n  vendor: findField(summaryFields, ['vendor', 'supplier', 'from', 'company']),\n  date: findField(summaryFields, ['date', 'invoice date']),\n  dueDate: findField(summaryFields, ['due date', 'payment due', 'due']),\n  subtotal: parseFloat((findField(summaryFields, ['subtotal', 'sub total']) || '0').replace(/[^0-9.]/g, '')),\n  tax: parseFloat((findField(summaryFields, ['tax', 'vat', 'gst']) || '0').replace(/[^0-9.]/g, '')),\n  total: parseFloat((findField(summaryFields, ['total', 'amount due', 'balance']) || '0').replace(/[^0-9.]/g, '')),\n  currency: findField(summaryFields, ['currency']) || 'USD'\n};\n\n// Extract line items\nconst lineItemGroups = ocrResponse.ExpenseDocuments?.[0]?.LineItemGroups || [];\nconst lineItems = [];\n\nfor (const group of lineItemGroups) {\n  for (const lineItem of group.LineItems || []) {\n    const item = {};\n    for (const field of lineItem.LineItemExpenseFields || []) {\n      const type = field.Type?.Text?.toLowerCase();\n      const value = field.ValueDetection?.Text;\n      \n      if (type?.includes('description') || type?.includes('item')) {\n        item.description = value;\n      } else if (type?.includes('quantity') || type?.includes('qty')) {\n        item.quantity = parseFloat(value) || 1;\n      } else if (type?.includes('price') || type?.includes('rate')) {\n        item.unitPrice = parseFloat((value || '0').replace(/[^0-9.]/g, ''));\n      } else if (type?.includes('amount') || type?.includes('total')) {\n        item.amount = parseFloat((value || '0').replace(/[^0-9.]/g, ''));\n      }\n    }\n    if (item.description) {\n      lineItems.push(item);\n    }\n  }\n}\n\ninvoiceData.lineItems = lineItems;\ninvoiceData.confidence = ocrResponse.ExpenseDocuments?.[0]?.Blocks?.[0]?.Confidence || 0;\ninvoiceData.processedAt = new Date().toISOString();\n\nreturn { json: invoiceData };"
+      },
+      "id": "parse-ocr-response",
+      "name": "Parse OCR Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate invoice data\nconst invoice = $input.item.json;\n\nconst errors = [];\nconst warnings = [];\n\n// Required field validation\nif (!invoice.invoiceNumber) {\n  errors.push('Missing invoice number');\n}\nif (!invoice.vendor) {\n  errors.push('Missing vendor information');\n}\nif (!invoice.total || invoice.total <= 0) {\n  errors.push('Invalid or missing total amount');\n}\nif (!invoice.date) {\n  warnings.push('Missing invoice date');\n}\n\n// Business rule validation\nif (invoice.total > 10000) {\n  warnings.push('High value invoice - requires manager approval');\n}\n\n// Date validation\nif (invoice.dueDate) {\n  const dueDate = new Date(invoice.dueDate);\n  const today = new Date();\n  const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));\n  \n  if (daysUntilDue < 0) {\n    warnings.push(`Invoice is ${Math.abs(daysUntilDue)} days overdue`);\n  } else if (daysUntilDue <= 7) {\n    warnings.push(`Invoice due in ${daysUntilDue} days`);\n  }\n  \n  invoice.daysUntilDue = daysUntilDue;\n}\n\n// Confidence check\nif (invoice.confidence < 80) {\n  warnings.push('Low OCR confidence - manual review recommended');\n}\n\n// Calculate validation result\nconst isValid = errors.length === 0;\nconst requiresApproval = warnings.length > 0 || invoice.total > 5000;\n\nreturn {\n  json: {\n    ...invoice,\n    validation: {\n      isValid,\n      errors,\n      warnings,\n      requiresApproval\n    }\n  }\n};"
+      },
+      "id": "validate-invoice",
+      "name": "Validate Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"validation\"][\"isValid\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"validation\"][\"requiresApproval\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-approval-required",
+      "name": "Check If Approval Required",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1520, 200]
+    },
+    {
+      "parameters": {
+        "resource": "bill",
+        "operation": "create",
+        "vendorId": "={{$json[\"vendorId\"]}}",
+        "lineItems": "={{$json[\"lineItems\"]}}",
+        "dueDate": "={{$json[\"dueDate\"]}}",
+        "docNumber": "={{$json[\"invoiceNumber\"]}}",
+        "additionalFields": {
+          "memo": "Auto-processed via n8n automation"
+        }
+      },
+      "id": "create-quickbooks-bill",
+      "name": "Create QuickBooks Bill",
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [1740, 100],
+      "credentials": {
+        "quickbooksOAuth2Api": {
+          "id": "3",
+          "name": "QuickBooks"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#finance-approvals",
+        "message": "📋 *Invoice Requires Approval*\n\n*Vendor:* {{$json[\"vendor\"]}}\n*Invoice #:* {{$json[\"invoiceNumber\"]}}\n*Amount:* {{$json[\"currency\"]}} {{$json[\"total\"]}}\n*Due Date:* {{$json[\"dueDate\"]}}\n\n*Warnings:*\n{{$json[\"validation\"][\"warnings\"].join('\\n')}}\n\nPlease review and approve in the accounting system.",
+        "otherOptions": {}
+      },
+      "id": "request-approval",
+      "name": "Request Approval via Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1740, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "4",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#finance-alerts",
+        "message": "⚠️ *Invoice Validation Failed*\n\n*Vendor:* {{$json[\"vendor\"] || 'Unknown'}}\n*Invoice #:* {{$json[\"invoiceNumber\"] || 'Unknown'}}\n*Amount:* {{$json[\"currency\"] || 'USD'}} {{$json[\"total\"] || 0}}\n\n*Errors:*\n{{$json[\"validation\"][\"errors\"].join('\\n')}}\n\nManual review required.",
+        "otherOptions": {}
+      },
+      "id": "validation-failed-alert",
+      "name": "Validation Failed Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1520, 500],
+      "credentials": {
+        "slackApi": {
+          "id": "4",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fileName": "=/data/invoices/{{$json[\"invoiceNumber\"]}}.json",
+        "options": {}
+      },
+      "id": "save-invoice-record",
+      "name": "Save Invoice Record",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [1960, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-webhook",
+        "options": {}
+      },
+      "id": "payment-webhook",
+      "name": "Payment Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process payment and update invoice status\nconst payment = $input.item.json;\n\nconst paymentRecord = {\n  invoiceNumber: payment.invoice_number,\n  amount: payment.amount,\n  paymentDate: payment.payment_date || new Date().toISOString(),\n  paymentMethod: payment.payment_method,\n  reference: payment.reference,\n  processedAt: new Date().toISOString()\n};\n\n// In production, update the invoice record in database\n// const invoice = await updateInvoiceStatus(payment.invoice_number, 'paid');\n\nreturn { json: paymentRecord };"
+      },
+      "id": "process-payment",
+      "name": "Process Payment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [420, 600]
+    },
+    {
+      "parameters": {
+        "resource": "payment",
+        "operation": "create",
+        "vendorId": "={{$json[\"vendorId\"]}}",
+        "billId": "={{$json[\"billId\"]}}",
+        "amount": "={{$json[\"amount\"]}}",
+        "additionalFields": {
+          "paymentMethod": "={{$json[\"paymentMethod\"]}}"
+        }
+      },
+      "id": "record-quickbooks-payment",
+      "name": "Record QuickBooks Payment",
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [640, 600],
+      "credentials": {
+        "quickbooksOAuth2Api": {
+          "id": "3",
+          "name": "QuickBooks"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "daily-financial-check",
+      "name": "Daily Financial Check",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 900]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate daily financial summary\nconst fs = require('fs');\nconst path = require('path');\n\nconst invoicesDir = '/data/invoices';\nconst today = new Date();\n\n// Read all invoice files\nlet invoices = [];\ntry {\n  const files = fs.readdirSync(invoicesDir);\n  for (const file of files) {\n    if (file.endsWith('.json')) {\n      const content = fs.readFileSync(path.join(invoicesDir, file), 'utf8');\n      invoices.push(JSON.parse(content));\n    }\n  }\n} catch (error) {\n  // Directory may not exist yet\n}\n\n// Calculate summary metrics\nconst summary = {\n  date: today.toISOString().split('T')[0],\n  totalInvoices: invoices.length,\n  totalAmount: invoices.reduce((sum, inv) => sum + (inv.total || 0), 0),\n  unpaidInvoices: invoices.filter(inv => !inv.paidDate).length,\n  unpaidAmount: invoices.filter(inv => !inv.paidDate).reduce((sum, inv) => sum + (inv.total || 0), 0),\n  overdueInvoices: [],\n  dueSoonInvoices: [],\n  byVendor: {},\n  byCategory: {}\n};\n\n// Categorize invoices\nfor (const invoice of invoices) {\n  if (!invoice.paidDate && invoice.dueDate) {\n    const dueDate = new Date(invoice.dueDate);\n    const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));\n    \n    if (daysUntilDue < 0) {\n      summary.overdueInvoices.push({\n        invoiceNumber: invoice.invoiceNumber,\n        vendor: invoice.vendor,\n        amount: invoice.total,\n        daysOverdue: Math.abs(daysUntilDue)\n      });\n    } else if (daysUntilDue <= 7) {\n      summary.dueSoonInvoices.push({\n        invoiceNumber: invoice.invoiceNumber,\n        vendor: invoice.vendor,\n        amount: invoice.total,\n        daysUntilDue\n      });\n    }\n  }\n  \n  // Group by vendor\n  const vendor = invoice.vendor || 'Unknown';\n  if (!summary.byVendor[vendor]) {\n    summary.byVendor[vendor] = { count: 0, total: 0 };\n  }\n  summary.byVendor[vendor].count++;\n  summary.byVendor[vendor].total += invoice.total || 0;\n}\n\nreturn { json: summary };"
+      },
+      "id": "generate-daily-summary",
+      "name": "Generate Daily Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [420, 900]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json[\"overdueInvoices\"].length}}",
+              "value2": 0,
+              "operation": "larger"
+            }
+          ]
+        }
+      },
+      "id": "check-overdue",
+      "name": "Check for Overdue Invoices",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [640, 900]
+    },
+    {
+      "parameters": {
+        "channel": "#finance-alerts",
+        "message": "🚨 *Overdue Invoices Alert*\n\nThere are *{{$json[\"overdueInvoices\"].length}}* overdue invoices:\n\n{{$json[\"overdueInvoices\"].map(inv => `• ${inv.vendor} - ${inv.invoiceNumber}: $${inv.amount} (${inv.daysOverdue} days overdue)`).join('\\n')}}\n\n*Total Overdue Amount:* ${{$json[\"overdueInvoices\"].reduce((sum, inv) => sum + inv.amount, 0).toFixed(2)}}\n\nPlease take immediate action.",
+        "otherOptions": {}
+      },
+      "id": "overdue-alert",
+      "name": "Send Overdue Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [860, 800],
+      "credentials": {
+        "slackApi": {
+          "id": "4",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fileName": "=/data/financial_summaries/summary_{{$json[\"date\"]}}.json",
+        "options": {}
+      },
+      "id": "save-daily-summary",
+      "name": "Save Daily Summary",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [860, 1000]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 1 * *"
+            }
+          ]
+        }
+      },
+      "id": "monthly-report-trigger",
+      "name": "Monthly Report Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 1200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate monthly financial report\nconst fs = require('fs');\nconst path = require('path');\n\nconst today = new Date();\nconst lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);\nconst monthName = lastMonth.toLocaleString('default', { month: 'long', year: 'numeric' });\n\nconst invoicesDir = '/data/invoices';\nconst summariesDir = '/data/financial_summaries';\n\n// Read all invoices\nlet invoices = [];\ntry {\n  const files = fs.readdirSync(invoicesDir);\n  for (const file of files) {\n    if (file.endsWith('.json')) {\n      const content = fs.readFileSync(path.join(invoicesDir, file), 'utf8');\n      invoices.push(JSON.parse(content));\n    }\n  }\n} catch (error) {}\n\n// Filter to last month\nconst monthStart = new Date(lastMonth.getFullYear(), lastMonth.getMonth(), 1);\nconst monthEnd = new Date(lastMonth.getFullYear(), lastMonth.getMonth() + 1, 0);\n\nconst monthlyInvoices = invoices.filter(inv => {\n  const invDate = new Date(inv.date || inv.processedAt);\n  return invDate >= monthStart && invDate <= monthEnd;\n});\n\n// Generate report\nconst report = {\n  period: monthName,\n  generatedAt: today.toISOString(),\n  summary: {\n    totalInvoices: monthlyInvoices.length,\n    totalAmount: monthlyInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0),\n    paidInvoices: monthlyInvoices.filter(inv => inv.paidDate).length,\n    paidAmount: monthlyInvoices.filter(inv => inv.paidDate).reduce((sum, inv) => sum + (inv.total || 0), 0),\n    unpaidInvoices: monthlyInvoices.filter(inv => !inv.paidDate).length,\n    unpaidAmount: monthlyInvoices.filter(inv => !inv.paidDate).reduce((sum, inv) => sum + (inv.total || 0), 0)\n  },\n  byVendor: {},\n  byCategory: {},\n  trends: {\n    averageInvoiceAmount: monthlyInvoices.length > 0 \n      ? monthlyInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0) / monthlyInvoices.length \n      : 0,\n    averagePaymentTime: 0 // Calculate from paid invoices\n  }\n};\n\n// Group by vendor\nfor (const inv of monthlyInvoices) {\n  const vendor = inv.vendor || 'Unknown';\n  if (!report.byVendor[vendor]) {\n    report.byVendor[vendor] = { count: 0, total: 0, paid: 0 };\n  }\n  report.byVendor[vendor].count++;\n  report.byVendor[vendor].total += inv.total || 0;\n  if (inv.paidDate) report.byVendor[vendor].paid += inv.total || 0;\n}\n\nreturn { json: report };"
+      },
+      "id": "generate-monthly-report",
+      "name": "Generate Monthly Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [420, 1200]
+    },
+    {
+      "parameters": {
+        "fileName": "=/data/financial_reports/report_{{$json[\"period\"].replace(' ', '_')}}.json",
+        "options": {}
+      },
+      "id": "save-monthly-report",
+      "name": "Save Monthly Report",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [640, 1200]
+    },
+    {
+      "parameters": {
+        "channel": "#finance",
+        "message": "📊 *Monthly Financial Report - {{$json[\"period\"]}}*\n\n*Summary:*\n• Total Invoices: {{$json[\"summary\"][\"totalInvoices\"]}}\n• Total Amount: ${{$json[\"summary\"][\"totalAmount\"].toFixed(2)}}\n• Paid: {{$json[\"summary\"][\"paidInvoices\"]}} invoices (${{$json[\"summary\"][\"paidAmount\"].toFixed(2)}})\n• Unpaid: {{$json[\"summary\"][\"unpaidInvoices\"]}} invoices (${{$json[\"summary\"][\"unpaidAmount\"].toFixed(2)}})\n\n*Average Invoice Amount:* ${{$json[\"trends\"][\"averageInvoiceAmount\"].toFixed(2)}}\n\nFull report saved to the reports folder.",
+        "otherOptions": {}
+      },
+      "id": "send-monthly-report",
+      "name": "Send Monthly Report",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [860, 1200],
+      "credentials": {
+        "slackApi": {
+          "id": "4",
+          "name": "Slack"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Invoice Email Monitor": {
+      "main": [
+        [
+          {
+            "node": "Filter Invoice Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Invoice Emails": {
+      "main": [
+        [
+          {
+            "node": "OCR Extraction (AWS Textract)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OCR Extraction (AWS Textract)": {
+      "main": [
+        [
+          {
+            "node": "Parse OCR Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse OCR Response": {
+      "main": [
+        [
+          {
+            "node": "Validate Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Invoice": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Check If Approval Required",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validation Failed Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Approval Required": {
+      "main": [
+        [
+          {
+            "node": "Request Approval via Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create QuickBooks Bill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create QuickBooks Bill": {
+      "main": [
+        [
+          {
+            "node": "Save Invoice Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Approval via Slack": {
+      "main": [
+        [
+          {
+            "node": "Save Invoice Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Payment": {
+      "main": [
+        [
+          {
+            "node": "Record QuickBooks Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Financial Check": {
+      "main": [
+        [
+          {
+            "node": "Generate Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Check for Overdue Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Overdue Invoices": {
+      "main": [
+        [
+          {
+            "node": "Send Overdue Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Overdue Alert": {
+      "main": [
+        [
+          {
+            "node": "Save Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monthly Report Trigger": {
+      "main": [
+        [
+          {
+            "node": "Generate Monthly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Monthly Report": {
+      "main": [
+        [
+          {
+            "node": "Save Monthly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Monthly Report": {
+      "main": [
+        [
+          {
+            "node": "Send Monthly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

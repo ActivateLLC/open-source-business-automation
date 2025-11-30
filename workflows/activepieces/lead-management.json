@@ -1,0 +1,168 @@
+{
+  "name": "Lead Management System",
+  "version": "0.0.1",
+  "trigger": {
+    "type": "WEBHOOK",
+    "settings": {
+      "inputUiInfo": {}
+    },
+    "valid": true,
+    "displayName": "Webhook Trigger"
+  },
+  "steps": [
+    {
+      "name": "lead_enrichment",
+      "displayName": "Lead Enrichment & Scoring",
+      "type": "CODE",
+      "settings": {
+        "sourceCode": "// Lead Enrichment and Scoring\n// This code standardizes lead data and calculates a lead score\n\nconst lead = inputs.body;\n\n// Standardize email (lowercase and trim)\nif (lead.email) {\n  lead.email = lead.email.toLowerCase().trim();\n}\n\n// Standardize name (capitalize first letter of each word)\nif (lead.name) {\n  lead.name = lead.name\n    .split(' ')\n    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())\n    .join(' ');\n}\n\n// Standardize phone (remove non-numeric characters)\nif (lead.phone) {\n  lead.phone = lead.phone.replace(/\\D/g, '');\n}\n\n// Calculate lead score\nlet score = 0;\n\n// Completeness scoring\nif (lead.email) score += 10;\nif (lead.phone) score += 10;\nif (lead.company) score += 15;\nif (lead.jobTitle) score += 10;\n\n// Source scoring\nconst sourceScores = {\n  'referral': 25,\n  'organic_search': 15,\n  'paid_search': 10,\n  'social': 5,\n  'website': 5\n};\nscore += sourceScores[lead.source] || 0;\n\n// Industry scoring\nconst highValueIndustries = ['technology', 'finance', 'healthcare', 'manufacturing'];\nif (lead.industry && highValueIndustries.includes(lead.industry.toLowerCase())) {\n  score += 20;\n}\n\n// Company size scoring\nconst size = parseInt(lead.companySize) || 0;\nif (size > 1000) score += 25;\nelse if (size > 100) score += 15;\nelse if (size > 10) score += 5;\n\n// Determine tier\nlet tier = 'cold';\nif (score >= 50) tier = 'hot';\nelse if (score >= 30) tier = 'warm';\n\n// Return enriched lead\nexport const output = {\n  ...lead,\n  score,\n  tier,\n  processedAt: new Date().toISOString()\n};",
+        "input": {}
+      },
+      "valid": true
+    },
+    {
+      "name": "route_by_tier",
+      "displayName": "Route By Lead Tier",
+      "type": "BRANCH",
+      "settings": {
+        "conditions": [
+          [
+            {
+              "firstValue": "{{lead_enrichment.output.tier}}",
+              "secondValue": "hot",
+              "caseSensitive": false,
+              "operator": "TEXT_EXACTLY_MATCHES"
+            }
+          ],
+          [
+            {
+              "firstValue": "{{lead_enrichment.output.tier}}",
+              "secondValue": "warm",
+              "caseSensitive": false,
+              "operator": "TEXT_EXACTLY_MATCHES"
+            }
+          ]
+        ],
+        "inputUiInfo": {}
+      },
+      "valid": true
+    }
+  ],
+  "branches": {
+    "route_by_tier": {
+      "hot": [
+        {
+          "name": "slack_hot_lead",
+          "displayName": "Notify Sales - Hot Lead",
+          "type": "PIECE",
+          "settings": {
+            "pieceName": "@activepieces/piece-slack",
+            "pieceVersion": "~0.5.0",
+            "actionName": "send_message",
+            "input": {
+              "channel": "{{connections.slack.channel}}",
+              "message": "🔥 *New Hot Lead!*\n\n*Name:* {{lead_enrichment.output.name}}\n*Company:* {{lead_enrichment.output.company}}\n*Email:* {{lead_enrichment.output.email}}\n*Phone:* {{lead_enrichment.output.phone}}\n*Job Title:* {{lead_enrichment.output.jobTitle}}\n*Industry:* {{lead_enrichment.output.industry}}\n*Score:* {{lead_enrichment.output.score}}\n\n*Message:*\n{{lead_enrichment.output.message}}\n\n_Source: {{lead_enrichment.output.source}}_"
+            }
+          },
+          "valid": true
+        },
+        {
+          "name": "crm_hot_lead",
+          "displayName": "Create CRM Contact - Hot",
+          "type": "PIECE",
+          "settings": {
+            "pieceName": "@activepieces/piece-hubspot",
+            "pieceVersion": "~0.3.0",
+            "actionName": "create_contact",
+            "input": {
+              "email": "{{lead_enrichment.output.email}}",
+              "firstName": "{{lead_enrichment.output.name.split(' ')[0]}}",
+              "lastName": "{{lead_enrichment.output.name.split(' ').slice(1).join(' ')}}",
+              "phone": "{{lead_enrichment.output.phone}}",
+              "company": "{{lead_enrichment.output.company}}",
+              "lifecycleStage": "lead",
+              "leadStatus": "IN_PROGRESS"
+            }
+          },
+          "valid": true
+        },
+        {
+          "name": "email_hot_lead",
+          "displayName": "Send Hot Lead Email",
+          "type": "PIECE",
+          "settings": {
+            "pieceName": "@activepieces/piece-smtp",
+            "pieceVersion": "~0.3.0",
+            "actionName": "send_email",
+            "input": {
+              "to": "{{lead_enrichment.output.email}}",
+              "subject": "Thank you for your interest!",
+              "body": "Hi {{lead_enrichment.output.name}},\n\nThank you for reaching out! We've received your inquiry and a member of our team will be in touch within the next 2 hours.\n\nIn the meantime, feel free to check out our resources at [link].\n\nBest regards,\nThe Sales Team"
+            }
+          },
+          "valid": true
+        }
+      ],
+      "warm": [
+        {
+          "name": "crm_warm_lead",
+          "displayName": "Create CRM Contact - Warm",
+          "type": "PIECE",
+          "settings": {
+            "pieceName": "@activepieces/piece-hubspot",
+            "pieceVersion": "~0.3.0",
+            "actionName": "create_contact",
+            "input": {
+              "email": "{{lead_enrichment.output.email}}",
+              "firstName": "{{lead_enrichment.output.name.split(' ')[0]}}",
+              "lastName": "{{lead_enrichment.output.name.split(' ').slice(1).join(' ')}}",
+              "phone": "{{lead_enrichment.output.phone}}",
+              "company": "{{lead_enrichment.output.company}}",
+              "lifecycleStage": "lead",
+              "leadStatus": "NEW"
+            }
+          },
+          "valid": true
+        },
+        {
+          "name": "email_warm_lead",
+          "displayName": "Add to Nurture Sequence",
+          "type": "PIECE",
+          "settings": {
+            "pieceName": "@activepieces/piece-mailchimp",
+            "pieceVersion": "~0.3.0",
+            "actionName": "add_subscriber",
+            "input": {
+              "email": "{{lead_enrichment.output.email}}",
+              "firstName": "{{lead_enrichment.output.name.split(' ')[0]}}",
+              "lastName": "{{lead_enrichment.output.name.split(' ').slice(1).join(' ')}}",
+              "listId": "{{connections.mailchimp.nurture_list_id}}",
+              "tags": ["warm-lead", "{{lead_enrichment.output.source}}"]
+            }
+          },
+          "valid": true
+        }
+      ],
+      "fallback": [
+        {
+          "name": "newsletter_cold_lead",
+          "displayName": "Add to Newsletter",
+          "type": "PIECE",
+          "settings": {
+            "pieceName": "@activepieces/piece-mailchimp",
+            "pieceVersion": "~0.3.0",
+            "actionName": "add_subscriber",
+            "input": {
+              "email": "{{lead_enrichment.output.email}}",
+              "firstName": "{{lead_enrichment.output.name.split(' ')[0]}}",
+              "lastName": "{{lead_enrichment.output.name.split(' ').slice(1).join(' ')}}",
+              "listId": "{{connections.mailchimp.newsletter_list_id}}",
+              "tags": ["cold-lead", "{{lead_enrichment.output.source}}"]
+            }
+          },
+          "valid": true
+        }
+      ]
+    }
+  }
+}

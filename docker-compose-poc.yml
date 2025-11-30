@@ -1,0 +1,195 @@
+version: '3.8'
+
+# Proof of Concept Stack - One Tool Per Use Case
+# Activepieces: Lead Management & Sales Automation
+# Windmill: Content Creation & Marketing Automation
+# n8n: Financial Operations & Invoice Processing
+
+services:
+  # =============================================================================
+  # SHARED INFRASTRUCTURE
+  # =============================================================================
+  
+  postgres:
+    image: postgres:14
+    restart: always
+    environment:
+      - POSTGRES_USER=automation
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me_please}
+      - POSTGRES_DB=automation
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U automation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # LEAD MANAGEMENT & SALES AUTOMATION - ACTIVEPIECES
+  # =============================================================================
+  # Why: MIT-licensed, completely free and open for everyone, can be self-hosted
+  # with a clean and intuitive UI requiring no coding, making it accessible to
+  # non-engineers while being API-friendly for developers to extend
+  #
+  # POC Use Case: Automated lead scoring and routing
+  # - Capture leads from web forms → Score based on criteria → Route to sales team → Send to CRM
+  # - Time to Deploy: 1-2 days
+  # - Quick Win: Show 80% reduction in manual lead handling
+  # =============================================================================
+  
+  activepieces:
+    image: activepieces/activepieces:latest
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      - AP_ENGINE_EXECUTABLE_PATH=dist/packages/engine/main.js
+      - AP_ENVIRONMENT=prod
+      - AP_FRONTEND_URL=http://localhost:8080
+      - AP_WEBHOOK_TIMEOUT_SECONDS=30
+      - AP_TRIGGER_DEFAULT_POLL_INTERVAL=5
+      - AP_POSTGRES_DATABASE=activepieces
+      - AP_POSTGRES_HOST=postgres
+      - AP_POSTGRES_PORT=5432
+      - AP_POSTGRES_USERNAME=automation
+      - AP_POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me_please}
+      - AP_EXECUTION_MODE=UNSANDBOXED
+      - AP_REDIS_HOST=redis
+      - AP_REDIS_PORT=6379
+      - AP_SANDBOX_RUN_TIME_SECONDS=600
+      - AP_TELEMETRY_ENABLED=false
+      - AP_ENCRYPTION_KEY=${ACTIVEPIECES_ENCRYPTION_KEY:-change_me_please_use_32_chars!!}
+      - AP_JWT_SECRET=${ACTIVEPIECES_JWT_SECRET:-change_me_please_use_strong_secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data/activepieces:/root/.activepieces
+
+  # =============================================================================
+  # CONTENT CREATION & MARKETING AUTOMATION - WINDMILL
+  # =============================================================================
+  # Why: Developer-centric workflow automation platform with AI Flow Chat and
+  # AI Fix capabilities, supports 20+ programming languages, and is used by
+  # 3,000+ organizations as of 2025
+  #
+  # POC Use Case: AI-assisted content pipeline
+  # - Content idea generation → AI writing assistance → Review workflow → 
+  #   Multi-channel distribution → Performance tracking
+  # - Time to Deploy: 2-3 days
+  # - Quick Win: Generate 10 blog posts/social posts in the time it normally takes to do 1
+  # =============================================================================
+  
+  windmill:
+    image: ghcr.io/windmill-labs/windmill:main
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgres://automation:${POSTGRES_PASSWORD:-change_me_please}@postgres:5432/windmill?sslmode=disable
+      - MODE=server
+      - BASE_URL=http://localhost:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data/windmill:/tmp/windmill
+
+  windmill_worker:
+    image: ghcr.io/windmill-labs/windmill:main
+    restart: always
+    environment:
+      - DATABASE_URL=postgres://automation:${POSTGRES_PASSWORD:-change_me_please}@postgres:5432/windmill?sslmode=disable
+      - MODE=worker
+      - WORKER_GROUP=default
+    depends_on:
+      - windmill
+    volumes:
+      - ./data/windmill:/tmp/windmill
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  windmill_lsp:
+    image: ghcr.io/windmill-labs/windmill-lsp:latest
+    restart: always
+    volumes:
+      - lsp_cache:/root/.cache
+
+  # =============================================================================
+  # FINANCIAL OPERATIONS & INVOICE PROCESSING - N8N
+  # =============================================================================
+  # Why: Despite licensing concerns, it's the most mature for financial workflows
+  # with 350+ integrations
+  #
+  # POC Use Case: Automated invoice processing
+  # - Email attachment extraction → OCR/data extraction → Validation → 
+  #   Entry to accounting system → Payment tracking → Reporting
+  # - Time to Deploy: 2-3 days
+  # - Quick Win: Process 100 invoices automatically vs. 5-10 hours of manual work
+  # =============================================================================
+  
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_HOST=localhost
+      - NODE_ENV=production
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=automation
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD:-change_me_please}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-change_me_please_use_strong_encryption_key}
+    volumes:
+      - ./data/n8n:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # =============================================================================
+  # BUSINESS INTELLIGENCE & VISUALIZATION - METABASE
+  # =============================================================================
+  
+  metabase:
+    image: metabase/metabase:latest
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_DBNAME=metabase
+      - MB_DB_PORT=5432
+      - MB_DB_USER=automation
+      - MB_DB_PASS=${POSTGRES_PASSWORD:-change_me_please}
+      - MB_DB_HOST=postgres
+    volumes:
+      - ./data/metabase:/metabase-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  lsp_cache:

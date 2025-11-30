@@ -5,10 +5,22 @@
 
 echo "Setting up Open Source Business Automation Stack..."
 
+# Detect which stack to set up
+STACK_TYPE="${1:-poc}"
+
+echo "Setting up $STACK_TYPE stack..."
+
 # Create base directories
 mkdir -p data/n8n/data
 mkdir -p data/postgres
 mkdir -p data/metabase
+
+# POC Stack directories
+if [ "$STACK_TYPE" = "poc" ]; then
+    echo "Creating POC stack directories..."
+    mkdir -p data/activepieces
+    mkdir -p data/windmill
+fi
 
 # Create workflow data directories
 mkdir -p data/n8n/data/invoices
@@ -70,9 +82,32 @@ EOF
 # Set permissions
 chmod -R 755 data/n8n/data
 
+# Create .env file from example if it doesn't exist
+if [ ! -f .env ]; then
+    if [ -f .env.example ]; then
+        echo "Creating .env file from .env.example..."
+        cp .env.example .env
+        echo "Please update the .env file with secure passwords before starting the stack."
+    fi
+fi
+
+echo ""
 echo "Directory structure and template files created successfully."
+echo ""
 echo "Next steps:"
-echo "1. Run 'docker-compose up -d' to start the automation stack"
-echo "2. Access n8n at http://localhost:5678"
-echo "3. Access Metabase at http://localhost:3000"
-echo "4. Import the n8n workflows from the 'workflows' directory"
+
+if [ "$STACK_TYPE" = "poc" ]; then
+    echo "1. Update the .env file with secure passwords"
+    echo "2. Run 'docker-compose -f docker-compose-poc.yml up -d' to start the POC stack"
+    echo "3. Access the platforms:"
+    echo "   - Activepieces (Lead Management): http://localhost:8080"
+    echo "   - Windmill (Content Creation): http://localhost:8000"
+    echo "   - n8n (Financial Operations): http://localhost:5678"
+    echo "   - Metabase (Analytics): http://localhost:3000"
+    echo "4. Import the workflows from the 'workflows/' directory"
+else
+    echo "1. Run 'docker-compose up -d' to start the automation stack"
+    echo "2. Access n8n at http://localhost:5678"
+    echo "3. Access Metabase at http://localhost:3000"
+    echo "4. Import the n8n workflows from the 'workflows/n8n' directory"
+fi
