@@ -132,6 +132,8 @@ services:
       - kafka
 
   # Ollama - Local AI/LLM for Lead Scoring, Content Generation & AI Assistant
+  # Note: For GPU acceleration, uncomment the 'deploy' section below and ensure
+  # NVIDIA Container Toolkit is installed. CPU-only mode works without GPU.
   ollama:
     image: ollama/ollama:latest
     restart: always
@@ -139,13 +141,14 @@ services:
       - "11434:11434"
     volumes:
       - ./data/ollama:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # Uncomment below for GPU acceleration (requires NVIDIA GPU and Container Toolkit)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
   # Redis - Caching and Real-Time Updates
   redis:

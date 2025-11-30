@@ -1,12 +1,12 @@
 -- Database initialization script for Open Source Business Automation Stack
 -- Creates databases and tables for leads, invoices, content, and audit trails
 
--- Create additional databases
-CREATE DATABASE IF NOT EXISTS nocobase;
-CREATE DATABASE IF NOT EXISTS metabase;
+-- Create additional databases (PostgreSQL syntax)
+-- Note: These will fail silently if databases already exist
+SELECT 'CREATE DATABASE nocobase' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'nocobase')\gexec
+SELECT 'CREATE DATABASE metabase' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'metabase')\gexec
 
--- Switch to n8n database for business data
-\c n8n;
+-- Note: The following tables are created in the n8n database (default database)
 
 -- ============================================================
 -- LEADS MANAGEMENT TABLES
