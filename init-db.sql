@@ -1,17 +1,50 @@
 -- Database Initialization Script for Open Source Business Automation Stack
 -- This script creates the necessary databases and tables for all services
+-- Note: This script runs after PostgreSQL creates the default database
 
--- Create databases for each service
-CREATE DATABASE IF NOT EXISTS nocobase;
-CREATE DATABASE IF NOT EXISTS activepieces;
-CREATE DATABASE IF NOT EXISTS n8n;
-CREATE DATABASE IF NOT EXISTS metabase;
+-- Switch to the default database first to create other databases
+\c postgres;
 
--- Create business data database (main operational database)
-CREATE DATABASE IF NOT EXISTS business_data;
+-- Create databases for each service (using DO block for IF NOT EXISTS logic)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'nocobase') THEN
+        PERFORM dblink_exec('dbname=' || current_database(), 'CREATE DATABASE nocobase');
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    -- Database might already exist, ignore
+    NULL;
+END $$;
 
--- Connect to business_data database
-\c business_data;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'activepieces') THEN
+        PERFORM dblink_exec('dbname=' || current_database(), 'CREATE DATABASE activepieces');
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'n8n') THEN
+        PERFORM dblink_exec('dbname=' || current_database(), 'CREATE DATABASE n8n');
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'metabase') THEN
+        PERFORM dblink_exec('dbname=' || current_database(), 'CREATE DATABASE metabase');
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
+-- Connect to the main business database (created via POSTGRES_DB in docker-compose)
+\c business_automation;
 
 -- ========================================
 -- LEAD MANAGEMENT MODULE

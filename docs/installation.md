@@ -112,7 +112,7 @@ The database initialization script runs automatically on first start. To verify:
 
 ```bash
 # Connect to PostgreSQL
-docker-compose exec postgres psql -U admin -d business_data
+docker-compose exec postgres psql -U admin -d business_automation
 
 # List tables
 \dt
@@ -127,7 +127,7 @@ docker-compose exec postgres psql -U admin -d business_data
 1. Access Superset at `http://your-server-ip:8088`
 2. Go to Settings > Database Connections
 3. Add connections for:
-   - PostgreSQL: `postgresql://admin:supersecret@postgres:5432/business_data`
+   - PostgreSQL: `postgresql://admin:supersecret@postgres:5432/business_automation`
    - ClickHouse: `clickhouse+http://admin:supersecret@clickhouse:8123/analytics`
 
 #### Metabase
@@ -136,7 +136,7 @@ docker-compose exec postgres psql -U admin -d business_data
 3. Connect to PostgreSQL:
    - Host: postgres
    - Port: 5432
-   - Database: business_data
+   - Database: business_automation
    - Username: admin
    - Password: supersecret
 

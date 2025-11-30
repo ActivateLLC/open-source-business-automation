@@ -181,26 +181,34 @@ cat > backup.sh << 'EOF'
 #!/bin/bash
 # Backup script for Open Source Business Automation Stack
 
+set -e
+
 BACKUP_DIR="backups/$(date +%Y-%m-%d_%H-%M-%S)"
 mkdir -p "$BACKUP_DIR"
+LOG_FILE="$BACKUP_DIR/backup.log"
 
-echo "Starting backup to $BACKUP_DIR..."
+echo "Starting backup to $BACKUP_DIR..." | tee "$LOG_FILE"
 
 # Backup PostgreSQL
-echo "Backing up PostgreSQL..."
-docker-compose exec -T postgres pg_dumpall -U admin > "$BACKUP_DIR/postgres_backup.sql" 2>/dev/null || echo "PostgreSQL backup skipped (not running)"
+echo "Backing up PostgreSQL..." | tee -a "$LOG_FILE"
+if docker-compose exec -T postgres pg_dumpall -U admin > "$BACKUP_DIR/postgres_backup.sql" 2>> "$LOG_FILE"; then
+    echo "PostgreSQL backup successful" | tee -a "$LOG_FILE"
+else
+    echo "WARNING: PostgreSQL backup failed - service may not be running" | tee -a "$LOG_FILE"
+fi
 
 # Backup configuration files
-echo "Backing up configuration files..."
-cp docker-compose.yml "$BACKUP_DIR/"
-cp -r data/ai_agents/config.yaml "$BACKUP_DIR/" 2>/dev/null || true
+echo "Backing up configuration files..." | tee -a "$LOG_FILE"
+cp docker-compose.yml "$BACKUP_DIR/" 2>> "$LOG_FILE" || true
+cp -r data/ai_agents/config.yaml "$BACKUP_DIR/" 2>> "$LOG_FILE" || true
 
 # Backup data directories (compressed)
-echo "Backing up data directories..."
-tar -czf "$BACKUP_DIR/n8n_data.tar.gz" data/n8n/data 2>/dev/null || true
-tar -czf "$BACKUP_DIR/ai_agents.tar.gz" data/ai_agents 2>/dev/null || true
+echo "Backing up data directories..." | tee -a "$LOG_FILE"
+tar -czf "$BACKUP_DIR/n8n_data.tar.gz" data/n8n/data 2>> "$LOG_FILE" || echo "n8n data backup skipped" | tee -a "$LOG_FILE"
+tar -czf "$BACKUP_DIR/ai_agents.tar.gz" data/ai_agents 2>> "$LOG_FILE" || echo "AI agents data backup skipped" | tee -a "$LOG_FILE"
 
-echo "Backup completed: $BACKUP_DIR"
+echo "Backup completed: $BACKUP_DIR" | tee -a "$LOG_FILE"
+echo "Backup log saved to: $LOG_FILE"
 ls -la "$BACKUP_DIR"
 EOF
 chmod +x backup.sh
