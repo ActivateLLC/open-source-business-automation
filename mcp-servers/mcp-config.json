@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "database": {
+      "name": "Database MCP Server",
+      "description": "Connects to PostgreSQL database for business data queries",
+      "command": "node",
+      "args": ["mcp-servers/database-server.js"],
+      "env": {
+        "POSTGRES_HOST": "${POSTGRES_HOST:-postgres}",
+        "POSTGRES_PORT": "${POSTGRES_PORT:-5432}",
+        "POSTGRES_DB": "${POSTGRES_DB:-n8n}",
+        "POSTGRES_USER": "${POSTGRES_USER:-n8n}",
+        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:-n8n_password}"
+      }
+    },
+    "n8n": {
+      "name": "n8n Workflow MCP Server",
+      "description": "Triggers and monitors n8n automation workflows",
+      "command": "node",
+      "args": ["mcp-servers/n8n-server.js"],
+      "env": {
+        "N8N_HOST": "${N8N_HOST:-http://n8n:5678}",
+        "N8N_API_KEY": "${N8N_API_KEY:-}"
+      }
+    },
+    "kafka": {
+      "name": "Kafka Events MCP Server",
+      "description": "Reads and processes Kafka event streams",
+      "command": "node",
+      "args": ["mcp-servers/kafka-server.js"],
+      "env": {
+        "KAFKA_BROKER": "${KAFKA_BROKER:-kafka:9092}"
+      }
+    },
+    "ollama": {
+      "name": "Ollama AI MCP Server",
+      "description": "AI-powered analysis and generation using local LLM",
+      "command": "node",
+      "args": ["mcp-servers/ollama-server.js"],
+      "env": {
+        "OLLAMA_HOST": "${OLLAMA_HOST:-http://ollama:11434}",
+        "OLLAMA_MODEL": "${OLLAMA_MODEL:-llama2}"
+      }
+    }
+  }
+}
