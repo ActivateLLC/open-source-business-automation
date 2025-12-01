@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import { VoiceButton } from './VoiceInput';
 
 interface CommandInputProps {
   onSubmit: (command: string) => void;
   isProcessing?: boolean;
   placeholder?: string;
   suggestions?: string[];
+  showVoiceButton?: boolean;
 }
 
 export function CommandInput({
@@ -14,6 +16,7 @@ export function CommandInput({
   isProcessing = false,
   placeholder = "Ask me anything... e.g., 'Show lead pipeline chart' or 'Give me revenue insights'",
   suggestions = [],
+  showVoiceButton = true,
 }: CommandInputProps) {
   const [value, setValue] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -25,6 +28,12 @@ export function CommandInput({
       onSubmit(value.trim());
       setValue('');
       setShowSuggestions(false);
+    }
+  };
+
+  const handleVoiceTranscript = (transcript: string) => {
+    if (transcript.trim()) {
+      onSubmit(transcript.trim());
     }
   };
 
@@ -68,63 +77,73 @@ export function CommandInput({
 
   return (
     <div className="relative w-full">
-      <div className="relative">
-        <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
-          {isProcessing ? (
-            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-          ) : (
+      <div className="relative flex items-center gap-2">
+        {/* Voice button */}
+        {showVoiceButton && (
+          <VoiceButton 
+            onTranscript={handleVoiceTranscript}
+            isProcessing={isProcessing}
+          />
+        )}
+
+        <div className="relative flex-1">
+          <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+            {isProcessing ? (
+              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                />
+              </svg>
+            )}
+          </div>
+
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => value.length > 0 && suggestions.length > 0 && setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            placeholder={placeholder}
+            disabled={isProcessing}
+            className="command-input pl-14 pr-14"
+          />
+
+          <button
+            onClick={handleSubmit}
+            disabled={!value.trim() || isProcessing}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-primary-500 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-600 transition-colors"
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                d="M14 5l7 7m0 0l-7 7m7-7H3"
               />
             </svg>
-          )}
+          </button>
         </div>
-
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onFocus={() => value.length > 0 && suggestions.length > 0 && setShowSuggestions(true)}
-          onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-          placeholder={placeholder}
-          disabled={isProcessing}
-          className="command-input pl-14 pr-14"
-        />
-
-        <button
-          onClick={handleSubmit}
-          disabled={!value.trim() || isProcessing}
-          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-primary-500 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-600 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M14 5l7 7m0 0l-7 7m7-7H3"
-            />
-          </svg>
-        </button>
       </div>
 
       {/* Suggestions dropdown */}
