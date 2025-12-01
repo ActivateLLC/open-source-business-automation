@@ -8,6 +8,8 @@ Enterprise-grade business automation using 100% free and open-source tools - no 
 
 This repository provides a comprehensive business automation solution that combines powerful open-source tools to streamline critical business processes:
 
+- **🎨 Generative UI Dashboard**: AI-powered interactive dashboard with natural language commands - create charts, get insights, and explore data without clicking through menus
+- **🔌 MCP Server Integration**: Model Context Protocol servers connecting all components for seamless AI-driven interactions
 - **Unified Platform**: NocoBase low-code frontend for all business operations
 - **Lead Management**: AI-powered lead scoring, routing, and nurturing system
 - **Content Creation**: AI-assisted content planning, generation, and automatic distribution
@@ -22,6 +24,8 @@ By implementing this stack, you can achieve enterprise-level automation without 
 - **Zero License Costs**: Built entirely with free and open-source software
 - **Complete Data Ownership**: All data remains on your infrastructure
 - **AI-Powered Intelligence**: Local AI/LLM integration via Ollama
+- **Generative UI**: Natural language commands to instantly create visualizations and insights
+- **MCP Integration**: Model Context Protocol servers for seamless tool interconnection
 - **Real-Time Dashboards**: Comprehensive business intelligence with Metabase
 - **Event-Driven Architecture**: Kafka-based audit trail and event processing
 - **Unlimited Customization**: Modify any aspect to fit your specific business needs
@@ -32,7 +36,26 @@ By implementing this stack, you can achieve enterprise-level automation without 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           NocoBase (Unified Frontend)                        │
+│                     Generative UI (AI-Powered Dashboard)                     │
+│                           http://localhost:4000                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  "Show me a lead pipeline chart" → Instant visualization           │    │
+│  │  "What are today's insights?" → AI-generated business insights     │    │
+│  │  "How is revenue trending?" → Dynamic charts on demand             │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    ▼                 ▼                 ▼
+          ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+          │   Database MCP  │ │   Ollama MCP    │ │   Kafka MCP     │
+          │   (PostgreSQL)  │ │   (AI/LLM)      │ │   (Events)      │
+          └─────────────────┘ └─────────────────┘ └─────────────────┘
+                    │                 │                 │
+                    └─────────────────┼─────────────────┘
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           NocoBase (Admin Frontend)                          │
 │                         http://localhost:13000                               │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
@@ -64,7 +87,8 @@ By implementing this stack, you can achieve enterprise-level automation without 
 
 | Component | Purpose | Port | License |
 |-----------|---------|------|---------|
-| [NocoBase](https://www.nocobase.com/) | Unified low-code frontend platform | 13000 | AGPL-3.0 |
+| **Generative UI** | AI-powered interactive dashboard with natural language commands | 4000 | MIT |
+| [NocoBase](https://www.nocobase.com/) | Unified low-code admin platform | 13000 | AGPL-3.0 |
 | [n8n](https://n8n.io/) | Workflow automation engine | 5678 | Fair-code |
 | [PostgreSQL](https://www.postgresql.org/) | Primary database | 5432 | PostgreSQL |
 | [Apache Kafka](https://kafka.apache.org/) | Event streaming & audit trail | 9092 | Apache 2.0 |
@@ -74,6 +98,42 @@ By implementing this stack, you can achieve enterprise-level automation without 
 | [Kafka UI](https://github.com/provectus/kafka-ui) | Kafka management interface | 8080 | Apache 2.0 |
 
 ## Features
+
+### ✨ Generative UI Dashboard (NEW)
+The Generative UI is an AI-powered interactive dashboard that lets you explore your business data through natural language:
+
+- **Natural Language Commands**: Just type what you want to see
+  - "Show me a lead pipeline chart"
+  - "What are today's key insights?"
+  - "How is revenue trending this month?"
+  - "Create a customer segment breakdown"
+  
+- **Dynamic Chart Generation**: Charts are created on-demand based on your requests
+  - Bar, line, pie, doughnut, and area charts
+  - Automatically styled and formatted
+  - Real-time data from your business systems
+  
+- **AI-Powered Insights**: Get intelligent analysis without manual data exploration
+  - Hot lead alerts
+  - Revenue trends and forecasts
+  - Customer behavior patterns
+  - Content performance analysis
+  
+- **MCP Server Integration**: Seamlessly connected to all your data sources
+  - Database MCP for PostgreSQL queries
+  - Ollama MCP for AI-powered analysis
+  - Kafka MCP for event stream processing
+  - n8n MCP for workflow automation
+
+### 🔌 MCP (Model Context Protocol) Servers
+MCP servers provide a standardized way for AI systems to interact with your business tools:
+
+| MCP Server | Purpose | Tools |
+|------------|---------|-------|
+| Database MCP | Query PostgreSQL | get_leads, get_customers, get_invoices, get_metrics |
+| Ollama MCP | AI Analysis | generate_insight, analyze_leads, score_lead, generate_content |
+| Kafka MCP | Event Streaming | get_recent_events, publish_event |
+| n8n MCP | Workflow Automation | trigger_workflow, get_workflow_status |
 
 ### 🎯 AI-Powered Lead Processing
 - Automatic lead capture via webhook
@@ -145,11 +205,21 @@ sleep 180
 docker exec -it open-source-business-automation_ollama_1 ollama pull llama2
 
 # Access the platforms
-# NocoBase: http://localhost:13000
-# n8n: http://localhost:5678
-# Metabase: http://localhost:3000
-# Kafka UI: http://localhost:8080
+# Generative UI: http://localhost:4000 (AI-powered dashboard)
+# NocoBase: http://localhost:13000 (Admin)
+# n8n: http://localhost:5678 (Workflows)
+# Metabase: http://localhost:3000 (BI)
+# Kafka UI: http://localhost:8080 (Events)
 ```
+
+### Try the Generative UI
+
+Once running, visit `http://localhost:4000` and try these commands:
+
+- **"Show me a lead pipeline chart"** - Instantly creates a visualization
+- **"Give me today's key insights"** - AI-generated business insights
+- **"How is revenue trending?"** - Revenue analysis with charts
+- **"What needs my attention?"** - Priority alerts and actions
 
 See the [Installation Guide](docs/installation.md) for complete setup instructions.
 

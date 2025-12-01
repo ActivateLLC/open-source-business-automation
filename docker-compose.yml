@@ -160,6 +160,34 @@ services:
       - ./data/redis:/data
     command: redis-server --appendonly yes
 
+  # Generative UI - AI-Powered Interactive Business Dashboard
+  # Features: Natural language commands, dynamic charts, real-time insights
+  generative-ui:
+    build:
+      context: ./generative-ui
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=production
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=n8n
+      - POSTGRES_USER=n8n
+      - POSTGRES_PASSWORD=n8n_password
+      - OLLAMA_HOST=http://ollama:11434
+      - KAFKA_BROKER=kafka:9092
+      - N8N_HOST=http://n8n:5678
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - postgres
+      - ollama
+      - kafka
+      - redis
+      - n8n
+
 volumes:
   n8n_data:
   postgres_data:
