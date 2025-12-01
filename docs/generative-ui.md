@@ -323,12 +323,54 @@ const ENTITY_KEYWORDS = {
 2. **Be Specific**: "Show revenue for this month" works better than "show data"
 3. **Explore Suggestions**: Use the suggested actions for common tasks
 4. **Check MCP Status**: The sidebar shows connection status for all servers
+5. **Use Voice Input**: Click the microphone button or use the Voice Canvas for hands-free operation
+
+## Voice-Driven Canvas
+
+The Voice Canvas (`/canvas`) provides a split-screen experience for voice-first interaction:
+
+### The Canvas Pattern
+
+- **Left Panel (Controller)**: Voice-first chat interface with text input fallback
+- **Right Panel (Canvas)**: A dynamic stage that renders charts and insights in real-time
+
+### Voice Input Features
+
+- **Voice Activity Detection (VAD)**: Automatically detects when you start and stop speaking
+- **Real-time Transcription**: Uses Web Speech API for browser-based speech-to-text
+- **Visual Feedback**: Animated indicators show listening and processing states
+- **Hands-free Operation**: No need to press buttons - just speak naturally
+
+### Interactive Charts with Recharts
+
+Charts rendered on the canvas support click-to-refine functionality:
+
+1. **Click any data point** to trigger a drill-down query
+2. **Selected items** are highlighted with a visual indicator
+3. **Clear selection** to return to the full view
+
+### Example Voice Commands
+
+- "Show me a lead pipeline chart" → Renders an interactive pie chart on the canvas
+- "Give me today's insights" → Displays insight cards with actionable recommendations
+- "How is revenue trending?" → Creates a line chart showing monthly revenue trends
+- "Group this by region instead" → Refines the current visualization
+
+### Technical Stack
+
+| Component | Library | Purpose |
+|-----------|---------|---------|
+| Voice Activity Detection | @ricky0123/vad-web | Automatic speech detection |
+| Speech Recognition | Web Speech API | Browser-based transcription |
+| Charts | Recharts | Composable, interactive visualizations |
+| UI Framework | Next.js + React | Server-side rendering and streaming |
 
 ## Future Enhancements
 
-- Voice command support
+- ~~Voice command support~~ ✅ Implemented
 - Custom chart templates
 - Saved queries and dashboards
-- Real-time data streaming
+- Real-time data streaming with Vercel AI SDK
 - Mobile-optimized interface
 - Advanced AI reasoning with GPT-4/Claude integration
+- Whisper model integration via Transformers.js for offline transcription

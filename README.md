@@ -125,6 +125,25 @@ The Generative UI is an AI-powered interactive dashboard that lets you explore y
   - Kafka MCP for event stream processing
   - n8n MCP for workflow automation
 
+### 🎤 Voice-Driven Canvas (NEW)
+A split-screen voice-first experience for hands-free business intelligence:
+
+- **Voice Commands**: Speak naturally to generate visualizations
+  - Automatic voice activity detection (VAD)
+  - Real-time speech-to-text transcription
+  - No button pressing required
+  
+- **Canvas Pattern**: Split-screen design
+  - Left panel: Voice-first chat controller with text fallback
+  - Right panel: Dynamic canvas that renders charts and insights
+  
+- **Interactive Charts**: Click to drill down
+  - Built with Recharts for composability
+  - Click any data point to refine queries
+  - Visual selection indicators
+  
+- **Access at**: `http://localhost:4000/canvas`
+
 ### 🔌 MCP (Model Context Protocol) Servers
 MCP servers provide a standardized way for AI systems to interact with your business tools:
 

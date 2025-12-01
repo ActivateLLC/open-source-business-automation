@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
+import Link from 'next/link';
 import { ChatMessage } from '@/types';
 import { CommandInput } from '@/components/CommandInput';
 import { ChatHistory } from '@/components/ChatMessage';
@@ -169,7 +170,14 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <Link 
+              href="/canvas"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary-500 to-purple-600 text-white rounded-xl text-sm font-medium hover:from-primary-600 hover:to-purple-700 transition-all shadow-lg shadow-primary-500/30"
+            >
+              <span>🎤</span>
+              <span className="hidden sm:inline">Voice Canvas</span>
+            </Link>
             <span className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-xs font-medium">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               AI Connected
