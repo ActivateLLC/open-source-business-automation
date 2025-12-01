@@ -9,10 +9,11 @@ Enterprise-grade business automation using 100% free and open-source tools - no 
 This repository provides a comprehensive business automation solution that combines powerful open-source tools to streamline critical business processes:
 
 - **Unified Platform**: NocoBase low-code frontend for all business operations
+- **Explore UI**: Traditional tabbed interface with scrollable, clickable elements for data exploration
 - **Lead Management**: AI-powered lead scoring, routing, and nurturing system
 - **Content Creation**: AI-assisted content planning, generation, and automatic distribution
 - **Financial Operations**: Automated invoice processing, payment tracking, and financial reporting
-- **AI Assistant**: Natural language interface for querying business data
+- **AI Assistant**: Natural language interface for querying business data (Generative UI mode)
 - **Complete Audit Trail**: Kafka-based event logging for full traceability
 
 By implementing this stack, you can achieve enterprise-level automation without the enterprise-level price tag.
@@ -32,7 +33,16 @@ By implementing this stack, you can achieve enterprise-level automation without 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           NocoBase (Unified Frontend)                        │
+│                        Explore UI (Traditional Frontend)                     │
+│                           http://localhost:8000                              │
+│        ┌──────────────────────────────────────────────────────────┐         │
+│        │    📊 Explore Mode    │    🤖 AI Assistant Mode          │         │
+│        │  (Tabs + Scrollable)  │    (Generative UI)               │         │
+│        └──────────────────────────────────────────────────────────┘         │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           NocoBase (Low-Code Admin)                          │
 │                         http://localhost:13000                               │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
@@ -64,7 +74,8 @@ By implementing this stack, you can achieve enterprise-level automation without 
 
 | Component | Purpose | Port | License |
 |-----------|---------|------|---------|
-| [NocoBase](https://www.nocobase.com/) | Unified low-code frontend platform | 13000 | AGPL-3.0 |
+| Explore UI | Traditional tabbed interface with Explore and AI modes | 8000 | MIT |
+| [NocoBase](https://www.nocobase.com/) | Unified low-code admin platform | 13000 | AGPL-3.0 |
 | [n8n](https://n8n.io/) | Workflow automation engine | 5678 | Fair-code |
 | [PostgreSQL](https://www.postgresql.org/) | Primary database | 5432 | PostgreSQL |
 | [Apache Kafka](https://kafka.apache.org/) | Event streaming & audit trail | 9092 | Apache 2.0 |
@@ -74,6 +85,15 @@ By implementing this stack, you can achieve enterprise-level automation without 
 | [Kafka UI](https://github.com/provectus/kafka-ui) | Kafka management interface | 8080 | Apache 2.0 |
 
 ## Features
+
+### 📊 Explore UI (Traditional Interface)
+- **Mode Toggle**: Switch between Explore mode and AI Assistant mode
+- **Tabbed Navigation**: Traditional tabs for Leads, Customers, Invoices, and Content
+- **Scrollable Lists**: Clickable card-based lists with infinite scroll
+- **Filtering**: Filter data by tier, status, and other attributes
+- **Detail Modals**: Click any item to view full details in a modal
+- **Real-time Stats**: Summary statistics displayed at the top of each tab
+- **Responsive Design**: Works on desktop, tablet, and mobile devices
 
 ### 🎯 AI-Powered Lead Processing
 - Automatic lead capture via webhook
@@ -120,6 +140,7 @@ By implementing this stack, you can achieve enterprise-level automation without 
 ## Documentation
 
 - [Installation Guide](docs/installation.md): Complete setup instructions
+- [Explore UI Guide](docs/explore-ui.md): Using the traditional tabbed interface
 - [Workflow Documentation](docs/workflows/README.md): Detailed explanation of each workflow
 - [Security Considerations](docs/security.md): Best practices for secure deployment
 - [Maintenance Guide](docs/maintenance.md): Ongoing operations and troubleshooting
@@ -145,10 +166,11 @@ sleep 180
 docker exec -it open-source-business-automation_ollama_1 ollama pull llama2
 
 # Access the platforms
-# NocoBase: http://localhost:13000
-# n8n: http://localhost:5678
-# Metabase: http://localhost:3000
-# Kafka UI: http://localhost:8080
+# Explore UI: http://localhost:8000 (Traditional UI with tabs + AI Assistant)
+# NocoBase: http://localhost:13000 (Low-code admin)
+# n8n: http://localhost:5678 (Workflow automation)
+# Metabase: http://localhost:3000 (BI dashboards)
+# Kafka UI: http://localhost:8080 (Event viewer)
 ```
 
 See the [Installation Guide](docs/installation.md) for complete setup instructions.
