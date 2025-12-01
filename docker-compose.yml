@@ -1,6 +1,19 @@
 version: '3'
 
 services:
+  # Explore UI - Traditional Navigation Frontend
+  # Provides a tabbed interface for exploring leads, customers, invoices, and content
+  # Also includes an AI Assistant mode for natural language queries
+  explore-ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8000:80"
+    depends_on:
+      - n8n
+
   # NocoBase - Unified Low-Code Platform Frontend
   nocobase:
     image: nocobase/nocobase:latest

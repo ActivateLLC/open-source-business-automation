@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Automation - Explore</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header with Mode Toggle -->
+        <header class="app-header">
+            <div class="header-left">
+                <h1 class="app-title">Business Automation</h1>
+            </div>
+            <div class="header-right">
+                <div class="mode-toggle">
+                    <button id="exploreMode" class="mode-btn active" aria-pressed="true">
+                        <span class="mode-icon">📊</span>
+                        Explore
+                    </button>
+                    <button id="aiMode" class="mode-btn" aria-pressed="false">
+                        <span class="mode-icon">🤖</span>
+                        AI Assistant
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Explore Mode View -->
+            <div id="exploreView" class="view-container active">
+                <!-- Tab Navigation -->
+                <nav class="tab-navigation" role="tablist" aria-label="Business data sections">
+                    <button class="tab-btn active" data-tab="leads" role="tab" aria-selected="true" aria-controls="leads-panel">
+                        <span class="tab-icon">🎯</span>
+                        <span class="tab-label">Leads</span>
+                        <span class="tab-count" id="leads-count">0</span>
+                    </button>
+                    <button class="tab-btn" data-tab="customers" role="tab" aria-selected="false" aria-controls="customers-panel">
+                        <span class="tab-icon">👥</span>
+                        <span class="tab-label">Customers</span>
+                        <span class="tab-count" id="customers-count">0</span>
+                    </button>
+                    <button class="tab-btn" data-tab="invoices" role="tab" aria-selected="false" aria-controls="invoices-panel">
+                        <span class="tab-icon">💰</span>
+                        <span class="tab-label">Invoices</span>
+                        <span class="tab-count" id="invoices-count">0</span>
+                    </button>
+                    <button class="tab-btn" data-tab="content" role="tab" aria-selected="false" aria-controls="content-panel">
+                        <span class="tab-icon">📝</span>
+                        <span class="tab-label">Content</span>
+                        <span class="tab-count" id="content-count">0</span>
+                    </button>
+                </nav>
+
+                <!-- Tab Panels -->
+                <div class="tab-panels">
+                    <!-- Leads Panel -->
+                    <div id="leads-panel" class="tab-panel active" role="tabpanel" aria-labelledby="leads-tab">
+                        <div class="panel-header">
+                            <h2>Lead Pipeline</h2>
+                            <div class="panel-actions">
+                                <div class="filter-group">
+                                    <label for="leads-filter">Filter by tier:</label>
+                                    <select id="leads-filter" class="filter-select">
+                                        <option value="all">All Leads</option>
+                                        <option value="hot">🔥 Hot</option>
+                                        <option value="warm">🌡️ Warm</option>
+                                        <option value="cold">❄️ Cold</option>
+                                    </select>
+                                </div>
+                                <button class="refresh-btn" onclick="loadLeads()" aria-label="Refresh leads">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="stats-bar">
+                            <div class="stat-item hot">
+                                <span class="stat-label">🔥 Hot</span>
+                                <span class="stat-value" id="hot-leads">0</span>
+                            </div>
+                            <div class="stat-item warm">
+                                <span class="stat-label">🌡️ Warm</span>
+                                <span class="stat-value" id="warm-leads">0</span>
+                            </div>
+                            <div class="stat-item cold">
+                                <span class="stat-label">❄️ Cold</span>
+                                <span class="stat-value" id="cold-leads">0</span>
+                            </div>
+                            <div class="stat-item avg">
+                                <span class="stat-label">📊 Avg Score</span>
+                                <span class="stat-value" id="avg-score">0</span>
+                            </div>
+                        </div>
+                        <div class="scrollable-list" id="leads-list" aria-label="Leads list">
+                            <div class="loading-state">Loading leads...</div>
+                        </div>
+                    </div>
+
+                    <!-- Customers Panel -->
+                    <div id="customers-panel" class="tab-panel" role="tabpanel" aria-labelledby="customers-tab">
+                        <div class="panel-header">
+                            <h2>Customers</h2>
+                            <div class="panel-actions">
+                                <div class="filter-group">
+                                    <label for="customers-filter">Filter by status:</label>
+                                    <select id="customers-filter" class="filter-select">
+                                        <option value="all">All Customers</option>
+                                        <option value="active">✅ Active</option>
+                                        <option value="inactive">⏸️ Inactive</option>
+                                    </select>
+                                </div>
+                                <button class="refresh-btn" onclick="loadCustomers()" aria-label="Refresh customers">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="stats-bar">
+                            <div class="stat-item total">
+                                <span class="stat-label">👥 Total</span>
+                                <span class="stat-value" id="total-customers">0</span>
+                            </div>
+                            <div class="stat-item active">
+                                <span class="stat-label">✅ Active</span>
+                                <span class="stat-value" id="active-customers">0</span>
+                            </div>
+                            <div class="stat-item ltv">
+                                <span class="stat-label">💵 Total LTV</span>
+                                <span class="stat-value" id="total-ltv">$0</span>
+                            </div>
+                        </div>
+                        <div class="scrollable-list" id="customers-list" aria-label="Customers list">
+                            <div class="loading-state">Loading customers...</div>
+                        </div>
+                    </div>
+
+                    <!-- Invoices Panel -->
+                    <div id="invoices-panel" class="tab-panel" role="tabpanel" aria-labelledby="invoices-tab">
+                        <div class="panel-header">
+                            <h2>Invoices</h2>
+                            <div class="panel-actions">
+                                <div class="filter-group">
+                                    <label for="invoices-filter">Filter by status:</label>
+                                    <select id="invoices-filter" class="filter-select">
+                                        <option value="all">All Invoices</option>
+                                        <option value="paid">✅ Paid</option>
+                                        <option value="unpaid">⏳ Unpaid</option>
+                                        <option value="overdue">⚠️ Overdue</option>
+                                    </select>
+                                </div>
+                                <button class="refresh-btn" onclick="loadInvoices()" aria-label="Refresh invoices">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="stats-bar">
+                            <div class="stat-item total">
+                                <span class="stat-label">📄 Total</span>
+                                <span class="stat-value" id="total-invoices">0</span>
+                            </div>
+                            <div class="stat-item amount">
+                                <span class="stat-label">💰 Total Amount</span>
+                                <span class="stat-value" id="total-invoice-amount">$0</span>
+                            </div>
+                            <div class="stat-item paid">
+                                <span class="stat-label">✅ Paid</span>
+                                <span class="stat-value" id="total-paid">$0</span>
+                            </div>
+                            <div class="stat-item overdue">
+                                <span class="stat-label">⚠️ Overdue</span>
+                                <span class="stat-value" id="overdue-count">0</span>
+                            </div>
+                        </div>
+                        <div class="scrollable-list" id="invoices-list" aria-label="Invoices list">
+                            <div class="loading-state">Loading invoices...</div>
+                        </div>
+                    </div>
+
+                    <!-- Content Panel -->
+                    <div id="content-panel" class="tab-panel" role="tabpanel" aria-labelledby="content-tab">
+                        <div class="panel-header">
+                            <h2>Content</h2>
+                            <div class="panel-actions">
+                                <div class="filter-group">
+                                    <label for="content-filter">Filter by status:</label>
+                                    <select id="content-filter" class="filter-select">
+                                        <option value="all">All Content</option>
+                                        <option value="published">✅ Published</option>
+                                        <option value="draft">📝 Draft</option>
+                                        <option value="scheduled">📅 Scheduled</option>
+                                    </select>
+                                </div>
+                                <button class="refresh-btn" onclick="loadContent()" aria-label="Refresh content">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="stats-bar">
+                            <div class="stat-item total">
+                                <span class="stat-label">📝 Total</span>
+                                <span class="stat-value" id="total-content">0</span>
+                            </div>
+                            <div class="stat-item published">
+                                <span class="stat-label">✅ Published</span>
+                                <span class="stat-value" id="published-content">0</span>
+                            </div>
+                            <div class="stat-item ai-gen">
+                                <span class="stat-label">🤖 AI Generated</span>
+                                <span class="stat-value" id="ai-generated">0</span>
+                            </div>
+                            <div class="stat-item views">
+                                <span class="stat-label">👁️ Avg Views</span>
+                                <span class="stat-value" id="avg-views">0</span>
+                            </div>
+                        </div>
+                        <div class="scrollable-list" id="content-list" aria-label="Content list">
+                            <div class="loading-state">Loading content...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Assistant Mode View -->
+            <div id="aiView" class="view-container">
+                <div class="ai-assistant-container">
+                    <div class="ai-header">
+                        <h2>🤖 AI Business Assistant</h2>
+                        <p class="ai-subtitle">Ask questions about your leads, customers, invoices, or content</p>
+                    </div>
+                    
+                    <div class="ai-chat-container">
+                        <div class="ai-messages" id="ai-messages" aria-live="polite">
+                            <div class="ai-message assistant">
+                                <div class="message-avatar">🤖</div>
+                                <div class="message-content">
+                                    <p>Hello! I'm your AI Business Assistant. I can help you with questions about:</p>
+                                    <ul>
+                                        <li><strong>Leads</strong> - "How many hot leads do we have?"</li>
+                                        <li><strong>Customers</strong> - "What's our total customer lifetime value?"</li>
+                                        <li><strong>Invoices</strong> - "Are there any overdue invoices?"</li>
+                                        <li><strong>Content</strong> - "How many articles have we published?"</li>
+                                    </ul>
+                                    <p>What would you like to know?</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="ai-input-container">
+                            <div class="quick-questions">
+                                <span class="quick-label">Quick questions:</span>
+                                <button class="quick-btn" onclick="askQuestion('How many hot leads do we have?')">Hot leads count</button>
+                                <button class="quick-btn" onclick="askQuestion('What is the total outstanding invoice amount?')">Outstanding invoices</button>
+                                <button class="quick-btn" onclick="askQuestion('How many customers are active?')">Active customers</button>
+                                <button class="quick-btn" onclick="askQuestion('What content performs best?')">Top content</button>
+                            </div>
+                            <form class="ai-input-form" onsubmit="submitQuestion(event)">
+                                <input 
+                                    type="text" 
+                                    id="ai-question-input" 
+                                    class="ai-input" 
+                                    placeholder="Ask me anything about your business data..."
+                                    aria-label="Ask a question"
+                                    autocomplete="off"
+                                />
+                                <button type="submit" class="ai-submit-btn" aria-label="Send question">
+                                    Send ➤
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Detail Modal -->
+        <div id="detailModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modal-title">Details</h3>
+                    <button class="modal-close" onclick="closeModal()" aria-label="Close modal">&times;</button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
