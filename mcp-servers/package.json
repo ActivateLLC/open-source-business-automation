@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "MCP servers for Open Source Business Automation platform",
   "private": true,
+  "type": "module",
   "scripts": {
     "start:database": "node database-server.js",
     "start:ollama": "node ollama-server.js",

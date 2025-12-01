@@ -3,9 +3,10 @@
  * Provides tools for querying PostgreSQL database via Model Context Protocol
  */
 
-const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
-const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
-const { Pool } = require('pg');
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import pg from 'pg';
+const { Pool } = pg;
 
 // Database configuration from environment
 const pool = new Pool({
