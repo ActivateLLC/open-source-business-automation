@@ -198,3 +198,6 @@ export interface QuickAction {
   command: string;
   category: 'leads' | 'finance' | 'content' | 'analytics';
 }
+
+// Export automation types
+export * from './automation';

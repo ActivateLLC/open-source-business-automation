@@ -6,6 +6,7 @@ export { CommandInput } from './CommandInput';
 export { VoiceInput, VoiceButton } from './VoiceInput';
 export { ChatMessageBubble, ChatHistory } from './ChatMessage';
 export { CanvasLayout } from './CanvasLayout';
+export { BrowserAutomation } from './BrowserAutomation';
 export { 
   QuickAction, 
   QuickActionsBar, 
