@@ -108,7 +108,14 @@ export function BrowserAutomation({ onClose }: BrowserAutomationProps) {
         body: JSON.stringify({ template: template.id }),
       });
 
-      const result = await response.json() as AutomationResult;
+      const data = await response.json();
+      
+      // Validate response structure
+      if (!data || typeof data !== 'object' || !('success' in data)) {
+        throw new Error('Invalid response format from automation API');
+      }
+      
+      const result = data as AutomationResult;
       
       // Update task with result
       setTasks((prevTasks) =>

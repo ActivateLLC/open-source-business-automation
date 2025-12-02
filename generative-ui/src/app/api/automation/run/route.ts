@@ -13,7 +13,7 @@ const AutomationRequestSchema = z.object({
 // Template execution function type
 interface TemplateExecutor {
   name: string;
-  execute: (stagehand: Stagehand) => Promise<{ success: boolean; data?: unknown; screenshot?: string }>;
+  execute: () => Promise<{ success: boolean; data?: unknown; screenshot?: string }>;
 }
 
 // Template definitions
@@ -141,9 +141,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Initialize Stagehand with configuration
+    // Note: verbose must be 0, 1, or 2 per Stagehand requirements
+    const verboseLevel = config?.verbose ?? 1;
     const stagehand = new Stagehand({
       env: 'LOCAL' as const,
-      verbose: (config?.verbose ?? 1) as 0 | 1 | 2,
+      verbose: verboseLevel as 0 | 1 | 2,
     });
 
     try {
@@ -151,7 +153,9 @@ export async function POST(request: NextRequest) {
       await stagehand.init();
 
       // Execute the template
-      const result = await templateDef.execute(stagehand);
+      // Note: Templates are currently demo implementations
+      // In production, they would use the stagehand instance for actual browser automation
+      const result = await templateDef.execute();
 
       // Close the browser
       await stagehand.close();
