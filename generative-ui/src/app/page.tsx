@@ -172,6 +172,13 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3">
             <Link 
+              href="/automation"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl text-sm font-medium hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/30"
+            >
+              <span>🤖</span>
+              <span className="hidden sm:inline">Automation</span>
+            </Link>
+            <Link 
               href="/canvas"
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary-500 to-purple-600 text-white rounded-xl text-sm font-medium hover:from-primary-600 hover:to-purple-700 transition-all shadow-lg shadow-primary-500/30"
             >

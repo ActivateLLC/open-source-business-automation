@@ -125,6 +125,36 @@ The Generative UI is an AI-powered interactive dashboard that lets you explore y
   - Kafka MCP for event stream processing
   - n8n MCP for workflow automation
 
+### 🤖 Browser Automation with Stagehand (NEW)
+AI-powered browser automation to handle repetitive tasks outside the dashboard:
+
+- **Pre-Built Templates**: Ready-to-use automations for common business tasks
+  - Lead enrichment from websites
+  - Invoice downloads from vendor portals
+  - Competitor monitoring and price tracking
+  - Form auto-fill across multiple sites
+  - Data extraction and web scraping
+  
+- **Intuitive Interface**: Manage automations directly from the dashboard
+  - Browse automation templates
+  - Monitor execution status in real-time
+  - View history and results
+  - Track successes and failures
+  
+- **AI-Powered Execution**: Leverages Stagehand by BrowserBase
+  - Natural language instructions
+  - Schema-based data extraction
+  - Intelligent navigation and interaction
+  - Built-in error handling and retries
+  
+- **Seamless Integration**: Works with existing workflows
+  - Trigger from n8n workflows
+  - Feed data into lead processing
+  - Schedule recurring automations
+  - Full audit trail via Kafka
+  
+- **Access at**: `http://localhost:4000/automation`
+
 ### 🎤 Voice-Driven Canvas (NEW)
 A split-screen voice-first experience for hands-free business intelligence:
 
@@ -199,6 +229,7 @@ MCP servers provide a standardized way for AI systems to interact with your busi
 ## Documentation
 
 - [Installation Guide](docs/installation.md): Complete setup instructions
+- [Browser Automation Guide](docs/browser-automation.md): Automate repetitive browser tasks with Stagehand
 - [Workflow Documentation](docs/workflows/README.md): Detailed explanation of each workflow
 - [Security Considerations](docs/security.md): Best practices for secure deployment
 - [Maintenance Guide](docs/maintenance.md): Ongoing operations and troubleshooting
@@ -225,6 +256,7 @@ docker exec -it open-source-business-automation_ollama_1 ollama pull llama2
 
 # Access the platforms
 # Generative UI: http://localhost:4000 (AI-powered dashboard)
+# Browser Automation: http://localhost:4000/automation (Stagehand automations)
 # NocoBase: http://localhost:13000 (Admin)
 # n8n: http://localhost:5678 (Workflows)
 # Metabase: http://localhost:3000 (BI)
@@ -240,7 +272,16 @@ Once running, visit `http://localhost:4000` and try these commands:
 - **"How is revenue trending?"** - Revenue analysis with charts
 - **"What needs my attention?"** - Priority alerts and actions
 
-See the [Installation Guide](docs/installation.md) for complete setup instructions.
+### Try Browser Automation
+
+Click the **🤖 Automation** button in the dashboard or visit `http://localhost:4000/automation`:
+
+- **Lead Enrichment** - Automatically gather info from company websites
+- **Competitor Monitoring** - Track competitor pricing and features
+- **Data Extraction** - Extract structured data from any website
+- **Form Auto-Fill** - Automate repetitive form submissions
+
+See the [Installation Guide](docs/installation.md) and [Browser Automation Guide](docs/browser-automation.md) for complete setup instructions.
 
 ## System Requirements
 
